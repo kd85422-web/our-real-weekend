@@ -247,8 +247,10 @@ function openDetail(id){
         <span class="pill">${p.emoji} ${esc(p.type)}</span>
         <span class="pill">${p.indoor?'🏠 실내':'🌤️ 야외'}</span>
         ${COST_LABEL[p.cost]?`<span class="pill">💳 ${COST_LABEL[p.cost]}</span>`:''}
-        ${p.link?`<a class="pill" href="${esc(p.link)}" target="_blank" rel="noopener" style="text-decoration:none;">${p.source&&p.source.includes('유튜브')?'▶️ 영상 보기':'🔗 자세히 보기'}</a>`:''}
       </div>
+      ${p.link?`<a class="btn ghost full" href="${esc(p.link)}" target="_blank" rel="noopener"
+        style="display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;margin-top:2px;">
+        ${p.source&&p.source.includes('유튜브')?'▶️ 유튜브에서 보기':'🔍 네이버에서 보기'} →</a>`:''}
       <div class="divider"></div>
       <div class="stat-row">
         <div class="stat"><div class="big">${rs.length?avgRating(id).toFixed(1):'-'}</div><div class="lbl">우리 평점</div></div>

@@ -92,7 +92,8 @@ async function fetchNaverPlaces(id, secret, home){
         loc:addr.split(' ').slice(0,3).join(' '),
         dist, cost:'', indoor:meta.indoor,
         photo:'', seed:id2,
-        link:it.link||'',
+        // 출처: 네이버 지도에서 이 장소 검색 (항상 동작하는 링크)
+        link:`https://map.naver.com/p/search/${encodeURIComponent(name+' '+(addr.split(' ')[0]||''))}`,
         _rank: prev? Math.min(prev._rank, idx) : idx,   // 리뷰 많은 순 위치 = 핫함
         best:false, wished:false, visited:false, rating:0
       };
