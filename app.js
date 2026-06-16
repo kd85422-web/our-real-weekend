@@ -247,7 +247,7 @@ function openDetail(id){
         <span class="pill">${p.emoji} ${esc(p.type)}</span>
         <span class="pill">${p.indoor?'🏠 실내':'🌤️ 야외'}</span>
         ${COST_LABEL[p.cost]?`<span class="pill">💳 ${COST_LABEL[p.cost]}</span>`:''}
-        ${p.link?`<a class="pill" href="${esc(p.link)}" target="_blank" rel="noopener" style="text-decoration:none;">▶️ 영상 보기</a>`:''}
+        ${p.link?`<a class="pill" href="${esc(p.link)}" target="_blank" rel="noopener" style="text-decoration:none;">${p.source&&p.source.includes('유튜브')?'▶️ 영상 보기':'🔗 자세히 보기'}</a>`:''}
       </div>
       <div class="divider"></div>
       <div class="stat-row">

@@ -1,94 +1,129 @@
 /* ============================================================
  * /api/refresh  ·  주간 자동 추천 갱신 (Vercel Serverless Function)
  * ------------------------------------------------------------
- * 한국관광공사 행사 API + 유튜브 Data API 에서 이번 주 행사·화제를 모아
- * Supabase 의 추천 전용 공간(__recos__)에 채워 넣습니다.
- * vercel.json 의 cron 으로 주 1회 자동 실행되고, 브라우저로
- * /api/refresh 를 직접 열어 수동 실행할 수도 있습니다.
+ * 네이버 검색 API로 "요즘 핫한" 수도권 맛집·카페·체험·팝업·전시·나들이
+ * 장소를 모아(리뷰 많은 순), 실제 사진을 붙이고, 집에서 가까운 순으로
+ * Supabase 추천 공간(__recos__)에 채웁니다.
  *
- * 필요한 Vercel 환경변수 (Project Settings → Environment Variables):
- *   SUPABASE_URL          예) https://xxxx.supabase.co
- *   SUPABASE_KEY          publishable(또는 anon) 키
- *   TOUR_API_KEY          data.go.kr "국문 관광정보 서비스" 디코딩 인증키
- *   YOUTUBE_API_KEY       (선택) 없으면 유튜브 단계는 건너뜀
- *   HOME_LAT, HOME_LNG    (선택) 집 좌표. 기본 서울시청
- *   RECO_SPACE            (선택) 기본 "__recos__"
+ * 필요한 Vercel 환경변수:
+ *   SUPABASE_URL, SUPABASE_KEY        (필수)
+ *   NAVER_ID, NAVER_SECRET            (필수) 네이버 개발자센터 검색 API 키
+ *   YOUTUBE_API_KEY                   (선택) '화제 영상' 추가용
+ *   HOME_LAT, HOME_LNG                (선택) 집/출발 좌표. 가까운 순 기준. 기본 서울시청
+ *   RECO_SPACE                        (선택) 기본 "__recos__"
  * ============================================================ */
 
-const AREA = { '1':'서울','2':'인천','31':'경기','32':'강원','33':'충북','34':'충남',
-  '35':'경북','36':'경남','37':'전북','38':'전남','39':'제주','6':'부산','4':'대구','5':'광주','3':'대전','7':'울산','8':'세종' };
-const AREA_CODES = ['1','31','2']; // 서울·경기·인천 (수도권 당일치기)
+// 취향별 검색어 묶음 (주마다 일부를 돌려가며 다양하게)
+// 판교·분당 기준 가까운 동네 위주 + 가끔 서울 핫플
+const QUERY_SETS = {
+  food:   ['정자동 카페거리 맛집','판교 맛집','서현 맛집','분당 맛집','광교 카페','수원 행궁동 맛집','용인 보정동 카페거리','성수 맛집','연남동 맛집'],
+  play:   ['분당 원데이클래스','판교 이색데이트','수원 공방 체험','용인 도자기 클래스','분당 향수공방','서울 원데이클래스'],
+  popup:  ['판교 현대백화점 팝업','분당 전시','수원 전시회','경기도미술관 전시','백남준아트센터','성수 팝업스토어'],
+  walk:   ['분당 율동공원','판교 화랑공원','광교호수공원','분당중앙공원 산책','수원화성 산책','과천 서울대공원'],
+};
 
-function ymd(d){ return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; }
-function decodeEntities(s){ return (s||'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'"); }
+function weekIndex(){ return Math.floor(Date.now()/(7*864e5)); }
+// 매주 각 카테고리에서 2개씩 회전 선택 → 신선하게
+function activeQueries(){
+  const w=weekIndex(), out=[];
+  for(const k of Object.keys(QUERY_SETS)){
+    const arr=QUERY_SETS[k];
+    out.push({cat:k, q:arr[w%arr.length]});
+    out.push({cat:k, q:arr[(w+1)%arr.length]});
+  }
+  return out;
+}
+
+function stripTags(s){ return (s||'').replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim(); }
+function hashId(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return 'nv'+Math.abs(h); }
 function haversineMin(lat1,lng1,lat2,lng2){
   if(!lat2||!lng2) return null;
   const R=6371, toRad=x=>x*Math.PI/180;
   const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
   const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
-  const km=2*R*Math.asin(Math.sqrt(a));
-  return Math.max(10, Math.round(km*1.4)+10); // 직선거리 → 대략 운전 분
+  return Math.max(5, Math.round(2*R*Math.asin(Math.sqrt(a))*1.4)+5);
+}
+// 네이버 local의 mapx/mapy → 경위도 (정수×1e7 형태면 나눠줌)
+function toLonLat(mapx, mapy){
+  let lon=parseFloat(mapx), lat=parseFloat(mapy);
+  if(lon>180) lon=lon/1e7;
+  if(lat>90)  lat=lat/1e7;
+  return {lon, lat};
+}
+function classify(category){
+  const c=category||'';
+  if(/카페|디저트|베이커리|빵/.test(c)) return {type:'카페', emoji:'☕', indoor:true};
+  if(/팝업/.test(c))                    return {type:'팝업', emoji:'🎪', indoor:true};
+  if(/전시|미술|박물|갤러리/.test(c))    return {type:'전시', emoji:'🖼️', indoor:true};
+  if(/공방|체험|클래스|공예|스튜디오/.test(c)) return {type:'체험', emoji:'🎨', indoor:true};
+  if(/공원|산|하천|해변|수목|관광|자연/.test(c)) return {type:'나들이', emoji:'🌿', indoor:false};
+  if(/음식|식당|한식|일식|양식|중식|고기|술집|주점|뷔페/.test(c)) return {type:'맛집', emoji:'🍽️', indoor:true};
+  return {type:'나들이', emoji:'📍', indoor:false};
+}
+function catLabel(cat){ return ({food:'맛집·카페', play:'체험', popup:'팝업·전시', walk:'나들이'})[cat]||''; }
+
+async function naverGet(path, id, secret){
+  const r=await fetch('https://openapi.naver.com/v1/search/'+path,{
+    headers:{'X-Naver-Client-Id':id, 'X-Naver-Client-Secret':secret}});
+  const text=await r.text();
+  let j=null; try{ j=JSON.parse(text); }catch(e){}
+  return {status:r.status, json:j, raw:text};
 }
 
-async function fetchFestivals(key, home){
+async function fetchNaverPlaces(id, secret, home){
   const byId={}; const diag=[];
-  const now=new Date(); const y=now.getFullYear();
-  // 오늘 → 올해 초 → 작년 초 순으로 폴백 (데이터가 있는 가장 최신 시점을 사용)
-  const candidates=[ymd(now), `${y}0101`, `${y-1}0101`];
-  for(const area of AREA_CODES){
-    const d={area, usedDate:null, tried:[], count:0, note:null};
-    let items=[];
-    for(const dt of candidates){
-      const url=`https://apis.data.go.kr/B551011/KorService2/searchFestival2`
-        +`?serviceKey=${encodeURIComponent(key)}&MobileOS=ETC&MobileApp=OurRealWeekend`
-        +`&_type=json&numOfRows=50&pageNo=1&arrange=A&eventStartDate=${dt}&areaCode=${area}`;
-      try{
-        const r=await fetch(url); const text=await r.text();
-        let j; try{ j=JSON.parse(text); }
-        catch(e){ d.tried.push({dt, parseErr:text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,120)}); continue; }
-        const total=j?.response?.body?.totalCount||0;
-        d.tried.push({dt, total});
-        let it=j?.response?.body?.items?.item || [];
-        if(!Array.isArray(it)) it=it?[it]:[];
-        if(it.length){ d.usedDate=dt; items=it; break; }
-      }catch(e){ d.tried.push({dt, err:String(e&&e.message||e)}); }
-    }
+  for(const {cat,q} of activeQueries()){
+    const res=await naverGet(`local.json?query=${encodeURIComponent(q)}&display=5&sort=comment`, id, secret);
+    const d={q, status:res.status, count:0, note:null};
+    if(res.status!==200){ d.note=(res.json&&res.json.errorMessage)||res.raw.slice(0,120); diag.push(d); continue; }
+    const items=res.json?.items||[];
     for(const it of items){
-      if(!it || !it.title) continue;
-      const lat=parseFloat(it.mapy), lng=parseFloat(it.mapx);
-      byId['tour'+it.contentid]={
-        id:'tour'+it.contentid,
-        name:decodeEntities(it.title),
-        emoji:'🎏', type:'축제·행사', source:'관광공사',
-        region:AREA[String(it.areacode)]||AREA[area]||'',
-        loc:(it.addr1||'').split(' ').slice(0,2).join(' ')||AREA[area]||'',
-        dist:haversineMin(home.lat,home.lng,lat,lng),
-        cost:'', indoor:false,
-        photo:it.firstimage||it.firstimage2||'', seed:'fest'+it.contentid,
-        eventStart:it.eventstartdate, eventEnd:it.eventenddate,
+      const name=stripTags(it.title); if(!name) continue;
+      const {lon,lat}=toLonLat(it.mapx, it.mapy);
+      const meta=classify(it.category);
+      const addr=it.roadAddress||it.address||'';
+      const id2=hashId(it.link||name+addr);
+      byId[id2]={
+        id:id2, name,
+        emoji:meta.emoji, type:meta.type, source:'네이버',
+        category:catLabel(cat),
+        region:(addr.split(' ')[0]||'').replace('특별시','').replace('광역시','').replace('도',''),
+        loc:addr.split(' ').slice(0,3).join(' '),
+        dist:haversineMin(home.lat,home.lng,lat,lon),
+        cost:'', indoor:meta.indoor,
+        photo:'', seed:id2,
+        link:it.link||'', _lat:lat, _lon:lon,
         best:false, wished:false, visited:false, rating:0
       };
     }
     d.count=items.length; diag.push(d);
   }
-  const out=Object.values(byId);
-  // 시작일 최신순(가장 최근/임박 행사 우선), 사진 있는 것 먼저
-  out.sort((a,b)=>(b.eventStart||'').localeCompare(a.eventStart||''));
-  const withPhoto=out.filter(p=>p.photo), noPhoto=out.filter(p=>!p.photo);
-  return { places:[...withPhoto, ...noPhoto].slice(0,12), diag };
+  let out=Object.values(byId);
+  // 집에서 가까운 순 (좌표 없는 건 뒤로)
+  out.sort((a,b)=>((a.dist==null)-(b.dist==null)) || ((a.dist||9999)-(b.dist||9999)));
+  out=out.slice(0,12);
+  // 대표 사진 붙이기 (네이버 이미지검색)
+  for(const p of out){
+    try{
+      const im=await naverGet(`image.json?query=${encodeURIComponent(p.name+' '+(p.region||''))}&display=1&sort=sim&filter=medium`, id, secret);
+      const t=im.json?.items?.[0];
+      if(t) p.photo=t.thumbnail||t.link||'';
+    }catch(e){}
+    delete p._lat; delete p._lon;
+  }
+  return { places:out, diag };
 }
 
 async function fetchYoutube(key){
   if(!key) return [];
-  const q=encodeURIComponent('수도권 주말 가볼만한곳 팝업 행사');
+  const q=encodeURIComponent('수도권 주말 가볼만한곳 핫플 맛집');
   const url=`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date`
-    +`&maxResults=6&regionCode=KR&relevanceLanguage=ko&q=${q}&key=${key}`;
+    +`&maxResults=4&regionCode=KR&relevanceLanguage=ko&q=${q}&key=${key}`;
   try{
     const r=await fetch(url); const j=await r.json();
     return (j.items||[]).filter(v=>v.id&&v.id.videoId).map(v=>({
-      id:'yt'+v.id.videoId,
-      name:decodeEntities(v.snippet.title).slice(0,42),
-      emoji:'🔥', type:'화제 영상', source:'유튜브',
+      id:'yt'+v.id.videoId, name:stripTags(v.snippet.title).slice(0,42),
+      emoji:'🔥', type:'화제 영상', source:'유튜브', category:'화제',
       region:'', loc:'유튜브 화제', dist:null, cost:'', indoor:false,
       photo:v.snippet.thumbnails?.high?.url||v.snippet.thumbnails?.default?.url||'',
       seed:'yt'+v.id.videoId, link:'https://youtu.be/'+v.id.videoId,
@@ -100,7 +135,7 @@ async function fetchYoutube(key){
 async function sbDeleteRecos(base,key,space){
   const r=await fetch(`${base}/rest/v1/places?space=eq.${encodeURIComponent(space)}`,{
     method:'DELETE', headers:{apikey:key, Authorization:'Bearer '+key, Prefer:'return=minimal'}});
-  return {status:r.status, body: r.ok?'' : (await r.text()).slice(0,300)};
+  return {status:r.status, body:r.ok?'':(await r.text()).slice(0,300)};
 }
 async function sbInsert(base,key,rows){
   if(!rows.length) return {status:'skip', body:''};
@@ -108,38 +143,37 @@ async function sbInsert(base,key,rows){
     method:'POST',
     headers:{apikey:key, Authorization:'Bearer '+key, 'Content-Type':'application/json', Prefer:'return=minimal'},
     body:JSON.stringify(rows)});
-  return {status:r.status, body: r.ok?'' : (await r.text()).slice(0,400)};
+  return {status:r.status, body:r.ok?'':(await r.text()).slice(0,400)};
 }
 
 module.exports = async (req, res) => {
   const SB=process.env.SUPABASE_URL, KEY=process.env.SUPABASE_KEY;
-  const TOUR=process.env.TOUR_API_KEY, YT=process.env.YOUTUBE_API_KEY;
+  const NID=process.env.NAVER_ID, NSEC=process.env.NAVER_SECRET, YT=process.env.YOUTUBE_API_KEY;
   const SPACE=process.env.RECO_SPACE||'__recos__';
-  const home={lat:parseFloat(process.env.HOME_LAT)||37.5663, lng:parseFloat(process.env.HOME_LNG)||126.9779};
+  // 기본 출발 기준점: 판교역 (환경변수 HOME_LAT/LNG로 덮어쓸 수 있음)
+  const home={lat:parseFloat(process.env.HOME_LAT)||37.3947, lng:parseFloat(process.env.HOME_LNG)||127.1112};
   if(!SB||!KEY) return res.status(500).json({ok:false, error:'SUPABASE_URL / SUPABASE_KEY 환경변수가 필요합니다.'});
-  if(!TOUR) return res.status(500).json({ok:false, error:'TOUR_API_KEY 환경변수가 필요합니다.'});
+  if(!NID||!NSEC) return res.status(500).json({ok:false, error:'NAVER_ID / NAVER_SECRET 환경변수가 필요합니다.'});
 
   try{
-    const fr=await fetchFestivals(TOUR, home);
-    const fests=fr.places;
+    const nr=await fetchNaverPlaces(NID, NSEC, home);
+    const places=nr.places;
     const tubes=await fetchYoutube(YT);
-    const places=[...fests, ...tubes];
-    if(places.length===0) return res.status(200).json({ok:true, count:0,
-      note:'가져온 항목이 없습니다. 아래 diag 의 resultMsg/note 를 확인하세요.', diag:fr.diag});
+    const all=[...places, ...tubes];
+    if(all.length===0) return res.status(200).json({ok:false, count:0,
+      note:'가져온 장소가 없습니다. 아래 diag 의 status/note 를 확인하세요(보통 네이버 키 문제).', diag:nr.diag});
 
-    // 가장 가깝거나 가장 임박한 행사를 이번 주 BEST 로
-    const best = fests.find(p=>p.dist!=null) || fests[0] || places[0];
+    const best = places.find(p=>p.photo) || places[0] || all[0];
     if(best) best.best=true;
 
-    const rows=places.map(p=>({id:p.id, space:SPACE, payload:p}));
+    const rows=all.map(p=>({id:p.id, space:SPACE, payload:p}));
     const del=await sbDeleteRecos(SB,KEY,SPACE);
     const ins=await sbInsert(SB,KEY,rows);
-    const wrote = ins.status>=200 && ins.status<300;
+    const wrote=ins.status>=200 && ins.status<300;
 
     res.status(200).json({ok:wrote, count:rows.length, written:wrote, space:SPACE,
-      festivals:fests.length, youtube:tubes.length, best:best&&best.name,
-      deleteStatus:del.status, insertStatus:ins.status,
-      insertError: wrote? undefined : ins.body,
+      places:places.length, youtube:tubes.length, best:best&&best.name,
+      insertStatus:ins.status, insertError: wrote?undefined:ins.body,
       updatedAt:new Date().toISOString()});
   }catch(e){
     res.status(500).json({ok:false, error:String(e&&e.message||e)});
