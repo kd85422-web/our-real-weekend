@@ -110,6 +110,21 @@ module.exports = async (req, res) => {
   if(!SB||!KEY) return res.status(500).json({ok:false, error:'SUPABASE_URL / SUPABASE_KEY 환경변수가 필요합니다.'});
   if(!TOUR) return res.status(500).json({ok:false, error:'TOUR_API_KEY 환경변수가 필요합니다.'});
 
+  // ── 탐침 모드: /api/refresh?probe=1 → 어느 날짜에 행사 데이터가 있는지 확인
+  if(req.query && req.query.probe){
+    const now=new Date();
+    const y=now.getFullYear();
+    const cands=[ymd(now), ymd(new Date(Date.now()-90*864e5)), `${y}0101`, `${y-1}0101`, '20250601', '20240601'];
+    const probe=[];
+    for(const dt of cands){
+      const url=`https://apis.data.go.kr/B551011/KorService2/searchFestival2?serviceKey=${encodeURIComponent(TOUR)}&MobileOS=ETC&MobileApp=ORW&_type=json&numOfRows=1&pageNo=1&arrange=A&eventStartDate=${dt}&areaCode=1`;
+      try{ const r=await fetch(url); const t=await r.text(); let j=null; try{j=JSON.parse(t);}catch(e){}
+        probe.push({eventStartDate:dt, total:j?.response?.body?.totalCount, msg:j?.response?.header?.resultMsg, sampleTitle:j?.response?.body?.items?.item?.[0]?.title || (Array.isArray(j?.response?.body?.items?.item)?null:j?.response?.body?.items?.item?.title)});
+      }catch(e){ probe.push({eventStartDate:dt, error:String(e&&e.message||e)}); }
+    }
+    return res.status(200).json({serverDate:now.toISOString(), probe});
+  }
+
   try{
     const fr=await fetchFestivals(TOUR, home);
     const fests=fr.places;
