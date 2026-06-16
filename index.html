@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<title>아워리얼위켄드 · Our Real Weekend</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+
+  <div class="screen active" id="s-home"></div>
+  <div class="screen" id="s-wish"></div>
+  <div class="screen" id="s-map"></div>
+  <div class="screen" id="s-record"></div>
+  <div class="screen" id="s-detail"></div>
+  <div class="screen" id="s-form"></div>
+  <div class="screen" id="s-add"></div>
+  <div class="screen" id="s-settings"></div>
+
+  <div class="nav">
+    <button class="on" data-screen="s-home" onclick="nav('s-home',this)"><span class="ic">🏠</span>홈</button>
+    <button data-screen="s-wish" onclick="nav('s-wish',this)"><span class="ic">♡</span>찜</button>
+    <button data-screen="s-map" onclick="nav('s-map',this)"><span class="ic">🗺️</span>지도</button>
+    <button data-screen="s-record" onclick="nav('s-record',this)"><span class="ic">📖</span>기록</button>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<!-- Supabase JS (클라우드 동기화 — config.js에 키가 있을 때만 사용) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
