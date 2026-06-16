@@ -11,6 +11,6 @@
  * 자세한 설정 방법은 README.md 를 참고하세요.
  */
 window.ORW_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: ""
+  SUPABASE_URL: "https://qjdftiatmjzttiutqfrg.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_97jnQwdcha04jN1sWceqsQ_9ElTZGu6"
 };
