@@ -98,15 +98,17 @@ async function fetchYoutube(key){
 }
 
 async function sbDeleteRecos(base,key,space){
-  await fetch(`${base}/rest/v1/places?space=eq.${encodeURIComponent(space)}`,{
+  const r=await fetch(`${base}/rest/v1/places?space=eq.${encodeURIComponent(space)}`,{
     method:'DELETE', headers:{apikey:key, Authorization:'Bearer '+key, Prefer:'return=minimal'}});
+  return {status:r.status, body: r.ok?'' : (await r.text()).slice(0,300)};
 }
 async function sbInsert(base,key,rows){
-  if(!rows.length) return;
-  await fetch(`${base}/rest/v1/places`,{
+  if(!rows.length) return {status:'skip', body:''};
+  const r=await fetch(`${base}/rest/v1/places`,{
     method:'POST',
     headers:{apikey:key, Authorization:'Bearer '+key, 'Content-Type':'application/json', Prefer:'return=minimal'},
     body:JSON.stringify(rows)});
+  return {status:r.status, body: r.ok?'' : (await r.text()).slice(0,400)};
 }
 
 module.exports = async (req, res) => {
@@ -130,11 +132,15 @@ module.exports = async (req, res) => {
     if(best) best.best=true;
 
     const rows=places.map(p=>({id:p.id, space:SPACE, payload:p}));
-    await sbDeleteRecos(SB,KEY,SPACE);
-    await sbInsert(SB,KEY,rows);
+    const del=await sbDeleteRecos(SB,KEY,SPACE);
+    const ins=await sbInsert(SB,KEY,rows);
+    const wrote = ins.status>=200 && ins.status<300;
 
-    res.status(200).json({ok:true, count:rows.length, festivals:fests.length, youtube:tubes.length,
-      best:best&&best.name, updatedAt:new Date().toISOString()});
+    res.status(200).json({ok:wrote, count:rows.length, written:wrote, space:SPACE,
+      festivals:fests.length, youtube:tubes.length, best:best&&best.name,
+      deleteStatus:del.status, insertStatus:ins.status,
+      insertError: wrote? undefined : ins.body,
+      updatedAt:new Date().toISOString()});
   }catch(e){
     res.status(500).json({ok:false, error:String(e&&e.message||e)});
   }
