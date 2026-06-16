@@ -6,6 +6,7 @@
 
 const KEY='orw_db_v1';
 const SPACE_KEY='orw_space';
+const RECO_SPACE='__recos__';   // 자동 추천이 채워지는 공유 공간
 const COST_LABEL={free:'무료',cheap:'저렴',mid:'보통',high:'넉넉'};
 const REGIONS=['서울','경기','인천','강원','충남','충북','전북','전남','경북','경남','제주'];
 
@@ -28,6 +29,11 @@ async function cloudFetch(){
   ]);
   if(pl.error||rv.error) throw (pl.error||rv.error);
   return {places:(pl.data||[]).map(r=>r.payload), reviews:(rv.data||[]).map(r=>r.payload)};
+}
+async function cloudFetchRecos(){
+  const {data,error}=await Cloud.sb.from('places').select('payload').eq('space',RECO_SPACE);
+  if(error) throw error;
+  return (data||[]).map(r=>({...r.payload, _reco:true}));
 }
 async function cloudUpsertPlace(p){ if(Cloud.mode!=='cloud')return;
   const {error}=await Cloud.sb.from('places').upsert({id:p.id,space:Cloud.space,payload:p,updated_at:new Date().toISOString()});
@@ -94,8 +100,14 @@ async function loadData(){
   if(Cloud.mode==='cloud'){
     try{
       const d=await cloudFetch();
-      if(d.places.length===0 && d.reviews.length===0){ DB=seed(); await cloudPushAll(); }
-      else { DB={profile:'나',places:d.places,reviews:d.reviews}; }
+      let recos=[]; try{ recos=await cloudFetchRecos(); }catch(e){}
+      if(d.places.length===0 && d.reviews.length===0 && recos.length===0){
+        DB=seed(); await cloudPushAll();           // 아직 아무것도 없을 때만 샘플
+      } else {
+        // 자동 추천(recos)을 바탕에 깔고, 부부 개인 기록(personal)으로 덮어쓰기
+        const map={}; recos.forEach(p=>map[p.id]=p); d.places.forEach(p=>map[p.id]=p);
+        DB={profile:'나', places:Object.values(map), reviews:d.reviews};
+      }
       saveLocal(); return;
     }catch(e){ toast('클라우드 연결 실패 — 로컬로 동작'); Cloud.mode='local'; }
   }
@@ -111,10 +123,14 @@ async function resetData(){
 
 /* ---------------- 헬퍼 ---------------- */
 const img=(s,w=800,h=800)=>`https://picsum.photos/seed/${encodeURIComponent(s)}/${w}/${h}`;
+/* 장소 사진: 실제 사진 URL(photo)이 있으면 그걸, 없으면 임시 이미지 */
+const pimg=(p,w=800,h=800)=>(p&&p.photo&&/^https?:/.test(p.photo))?p.photo:img(p?p.seed:'x',w,h);
 const $=id=>document.getElementById(id);
 const place=id=>DB.places.find(p=>p.id===id);
 const reviewsOf=id=>DB.reviews.filter(r=>r.placeId===id).sort((a,b)=>a.author==='나'?-1:1);
 const fmtDate=d=>{const x=new Date(d); const w=['일','월','화','수','목','금','토'][x.getDay()]; return `${x.getFullYear()}.${String(x.getMonth()+1).padStart(2,'0')}.${String(x.getDate()).padStart(2,'0')} (${w})`;};
+const fmtYmd=s=>s&&s.length===8?`${s.slice(0,4)}.${s.slice(4,6)}.${s.slice(6,8)}`:'';
+const fmtRange=(a,b)=>{const s=fmtYmd(a),e=fmtYmd(b); return e&&e!==s?`${s} ~ ${e}`:s;};
 const avgRating=id=>{const rs=reviewsOf(id); if(!rs.length) return place(id).rating||0; return (rs.reduce((s,r)=>s+r.rating,0)/rs.length);};
 const starStr=n=>'★'.repeat(Math.round(n))+'☆'.repeat(5-Math.round(n));
 function toast(msg){const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800);}
@@ -132,12 +148,12 @@ function renderAll(){ renderHome(); renderWish(); renderMap(); renderRecord(); }
 
 function cardHTML(p){
   return `<div class="card" onclick="openDetail('${p.id}')">
-    <div class="ph"><img src="${img(p.seed,400,400)}" loading="lazy">
+    <div class="ph"><img src="${pimg(p,400,400)}" loading="lazy">
       <button class="heart ${p.wished?'on':''}" onclick="toggleHeart(event,'${p.id}')">♥</button>
       <div class="tag">${p.emoji} ${esc(p.type)}</div></div>
     <h3>${esc(p.name)}</h3>
-    <div class="line">${esc(p.source)} · 차로 ${p.dist}분</div>
-    <div class="price"><b>${COST_LABEL[p.cost]||''}</b> · ⭐ ${avgRating(p.id).toFixed(1)}</div>
+    <div class="line">${esc(p.source)}${p.dist?` · 차로 ${p.dist}분`:''}</div>
+    <div class="price">${COST_LABEL[p.cost]?`<b>${COST_LABEL[p.cost]}</b> · `:''}⭐ ${avgRating(p.id).toFixed(1)}</div>
   </div>`;
 }
 
@@ -154,12 +170,12 @@ function renderHome(){
       </div>
     </div>
     ${best?`<div class="bigpick" onclick="openDetail('${best.id}')">
-      <img src="${img(best.seed,900,1100)}">
+      <img src="${pimg(best,900,1100)}">
       <div class="bp-grad"></div>
       <div class="bp-badge">이번 주 BEST</div>
       <button class="heart ${best.wished?'on':''}" onclick="toggleHeart(event,'${best.id}')">♥</button>
       <div class="bp-meta"><h2>${esc(best.name)}</h2>
-        <div class="bp-loc">📍 ${esc(best.loc)} · 차로 ${best.dist}분 · ${COST_LABEL[best.cost]} · ${esc(best.source)} 화제</div></div>
+        <div class="bp-loc">📍 ${[esc(best.loc), best.dist?`차로 ${best.dist}분`:'', COST_LABEL[best.cost], esc(best.source)+' 추천'].filter(Boolean).join(' · ')}</div></div>
       <div class="bp-chev">›</div>
     </div>`:''}
     <div class="sec" style="padding-top:24px;"><h2>다른 추천</h2><div class="h-sub">이번 주 화제인 행사·체험·나들이</div></div>
@@ -188,7 +204,7 @@ function renderRecord(){
       const rev=rs.map(r=>`<span class="av ${r.author==='나'?'me':'h'}">${r.author==='나'?'나':'남'}</span>★${r.rating}`).join(' ');
       const again=rs.some(r=>r.revisit)?' · <span style="color:var(--primary);">♥ 또 가고싶어요</span>':'';
       return `<div class="row" onclick="openDetail('${p.id}')">
-        <img src="${img(p.seed,200,200)}">
+        <img src="${pimg(p,200,200)}">
         <div class="info"><h3>${esc(p.name)}</h3>
           <div class="sub">${date?fmtDate(date):''} · ${esc(p.loc)}</div>
           <div class="reviewers">${rev}${again}</div></div></div>`;
@@ -240,17 +256,19 @@ function openDetail(id){
         ${r.photos&&r.photos.length?`<div class="rv-photos">${r.photos.map(s=>`<img src="${img(s,200,200)}">`).join('')}</div>`:''}
       </div></div>`).join('') : `<p style="color:var(--muted);font-size:14px;">아직 후기가 없어요. 다녀왔다면 첫 후기를 남겨보세요!</p>`;
   $('s-detail').innerHTML=`
-    <div class="detail-photo"><img src="${img(p.seed,900,700)}">
+    <div class="detail-photo"><img src="${pimg(p,900,700)}">
       <button class="back" onclick="goBack()">←</button>
       <button class="heart ${p.wished?'on':''}" style="top:44px;right:16px;width:36px;height:36px;font-size:18px;" onclick="toggleHeart(event,'${p.id}');openDetail('${p.id}')">♥</button>
     </div>
     <div class="detail-body">
       <h1>${esc(p.name)}</h1>
-      <div class="loc">${esc(p.loc)} · 차로 ${p.dist}분 · ${esc(p.source)} 화제</div>
+      <div class="loc">${[esc(p.loc), p.dist?`차로 ${p.dist}분`:'', esc(p.source)+' 추천'].filter(Boolean).join(' · ')}</div>
+      ${p.eventStart?`<div class="loc">📅 ${fmtRange(p.eventStart,p.eventEnd)}</div>`:''}
       <div class="pills">
         <span class="pill">${p.emoji} ${esc(p.type)}</span>
         <span class="pill">${p.indoor?'🏠 실내':'🌤️ 야외'}</span>
-        <span class="pill">💳 ${COST_LABEL[p.cost]}</span>
+        ${COST_LABEL[p.cost]?`<span class="pill">💳 ${COST_LABEL[p.cost]}</span>`:''}
+        ${p.link?`<a class="pill" href="${esc(p.link)}" target="_blank" rel="noopener" style="text-decoration:none;">▶️ 영상 보기</a>`:''}
       </div>
       <div class="divider"></div>
       <div class="stat-row">
