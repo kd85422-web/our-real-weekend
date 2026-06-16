@@ -62,36 +62,8 @@ function onRemoteChange(){ clearTimeout(_rtTimer); _rtTimer=setTimeout(async()=>
 
 /* ---------------- 데이터 ---------------- */
 function seed(){
-  return {
-    profile:'나',
-    places:[
-      {id:'p1', name:'한강 야간 러닝 & 플로깅', emoji:'🏃', type:'체험', source:'스레드', region:'서울', loc:'서울 여의도', dist:25, cost:'free', indoor:false, seed:'marathon', best:true, wished:false, visited:false, rating:0},
-      {id:'p2', name:"성수동 '여름 한정' 팝업스토어", emoji:'🎪', type:'팝업', source:'인스타', region:'서울', loc:'서울 성동구', dist:40, cost:'free', indoor:true, seed:'popup', wished:false, visited:false, rating:4.7},
-      {id:'p3', name:'가평 수목원 여름 빛축제', emoji:'🌿', type:'나들이', source:'유튜브', region:'경기', loc:'경기 가평', dist:80, cost:'mid', indoor:false, seed:'gapyeong2', wished:false, visited:false, rating:4.8},
-      {id:'p4', name:'뚝섬 플리마켓', emoji:'🛍️', type:'마켓', source:'인스타', region:'서울', loc:'서울 광진구', dist:30, cost:'free', indoor:false, seed:'flea', wished:false, visited:false, rating:4.5},
-      {id:'p5', name:'커플 도자기 원데이클래스', emoji:'🎨', type:'클래스', source:'스레드', region:'경기', loc:'경기 양평', dist:45, cost:'mid', indoor:true, seed:'pottery', wished:false, visited:false, rating:4.9},
-      {id:'p6', name:'수원 등불 야행', emoji:'🎏', type:'축제', source:'유튜브', region:'경기', loc:'경기 수원', dist:50, cost:'cheap', indoor:false, seed:'festival', wished:false, visited:false, rating:4.6},
-      {id:'p7', name:'경의선숲길 자전거', emoji:'🚴', type:'체험', source:'인스타', region:'서울', loc:'서울 마포구', dist:20, cost:'cheap', indoor:false, seed:'cycle', wished:false, visited:false, rating:4.4},
-      {id:'p8', name:'DDP 미디어아트展', emoji:'🖼️', type:'전시', source:'유튜브', region:'서울', loc:'서울 중구', dist:35, cost:'mid', indoor:true, seed:'exhibit', wished:false, visited:false, rating:4.7},
-      {id:'p9', name:'강화도 동막해변', emoji:'🏖️', type:'바다', source:'인스타', region:'인천', loc:'인천 강화', dist:90, cost:'free', indoor:false, seed:'namhae', wished:true, visited:false, rating:4.5},
-      {id:'p10', name:'포천 산정호수', emoji:'🌿', type:'자연', source:'유튜브', region:'경기', loc:'경기 포천', dist:80, cost:'cheap', indoor:false, seed:'pocheon', wished:true, visited:false, rating:4.6},
-      {id:'p11', name:'강릉 안목해변 카페거리', emoji:'☕', type:'카페', source:'스레드', region:'강원', loc:'강원 강릉', dist:150, cost:'mid', indoor:false, seed:'cafestreet', wished:true, visited:false, rating:4.7},
-      {id:'p12', name:'가평 아침고요수목원', emoji:'🌸', type:'자연', source:'유튜브', region:'경기', loc:'경기 가평', dist:80, cost:'mid', indoor:false, seed:'gapyeong', wished:false, visited:true, rating:0},
-      {id:'p13', name:'양평 두물머리', emoji:'☕', type:'카페', source:'인스타', region:'경기', loc:'경기 양평', dist:50, cost:'free', indoor:false, seed:'yangpyeong', wished:false, visited:true, rating:0},
-      {id:'p14', name:'인천 월미도', emoji:'🏖️', type:'바다', source:'유튜브', region:'인천', loc:'인천 중구', dist:60, cost:'cheap', indoor:false, seed:'incheon', wished:false, visited:true, rating:0},
-      {id:'p15', name:'파주 헤이리마을', emoji:'🚗', type:'드라이브', source:'인스타', region:'경기', loc:'경기 파주', dist:70, cost:'mid', indoor:false, seed:'paju', wished:false, visited:true, rating:0}
-    ],
-    reviews:[
-      {id:'r1', placeId:'p12', author:'나', rating:5, text:'꽃 너무 예뻤어! 산책로가 길어서 천천히 도는 맛이 있었어 🌸', photos:['gapyeong','garden2'], date:'2026-05-31', revisit:true, cost:32000},
-      {id:'r2', placeId:'p12', author:'남편', rating:4, text:'경치는 좋은데 사람이 좀 많았음. 그래도 또 가고 싶다 👍', photos:[], date:'2026-05-31', revisit:true, cost:32000},
-      {id:'r3', placeId:'p13', author:'나', rating:4.5, text:'노을이 최고였어 🌅', photos:['yangpyeong'], date:'2026-05-17', revisit:true, cost:18000},
-      {id:'r4', placeId:'p13', author:'남편', rating:5, text:'커피 맛집 발견. 또 가자', photos:[], date:'2026-05-17', revisit:true, cost:18000},
-      {id:'r5', placeId:'p14', author:'나', rating:4, text:'바닷바람 좋았다', photos:[], date:'2026-05-03', revisit:false, cost:25000},
-      {id:'r6', placeId:'p14', author:'남편', rating:4.5, text:'회 먹은 게 신의 한 수 🐟', photos:['incheon'], date:'2026-05-03', revisit:true, cost:25000},
-      {id:'r7', placeId:'p15', author:'나', rating:3.5, text:'아기자기한데 좀 멀어', photos:[], date:'2026-04-19', revisit:false, cost:40000},
-      {id:'r8', placeId:'p15', author:'남편', rating:4, text:'책방 구경 재밌었음', photos:[], date:'2026-04-19', revisit:true, cost:40000}
-    ]
-  };
+  // 실제 추천은 __recos__ 공간(서버 자동 갱신)에서 오므로, 개인 공간은 비워 시작합니다.
+  return { profile:'나', places:[], reviews:[] };
 }
 let DB;
 function saveLocal(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
@@ -116,9 +88,16 @@ async function loadData(){
 }
 
 async function resetData(){
-  DB=seed(); saveLocal();
-  if(Cloud.mode==='cloud'){ try{ await cloudPushAll(); }catch(e){} }
-  renderAll(); showOnly('s-home'); setNavActive('s-home'); toast('샘플 데이터로 초기화했어요');
+  if(!confirm('우리 기록(찜·후기·방문)을 모두 비울까요? 자동 추천 목록은 그대로 유지돼요.')) return;
+  if(Cloud.mode==='cloud'){
+    try{
+      await Cloud.sb.from('places').delete().eq('space',Cloud.space);
+      await Cloud.sb.from('reviews').delete().eq('space',Cloud.space);
+    }catch(e){}
+  }
+  localStorage.removeItem(KEY);
+  await loadData();           // 추천(__recos__)은 유지된 채 다시 불러오기
+  renderAll(); showOnly('s-home'); setNavActive('s-home'); toast('우리 기록을 비웠어요');
 }
 
 /* ---------------- 헬퍼 ---------------- */
@@ -397,8 +376,8 @@ function openSettings(){
       <div class="divider"></div>
       <div class="field">
         <label>데이터</label>
-        <button class="btn ghost full" onclick="resetData()">샘플 데이터로 초기화</button>
-        <div class="hint">${Cloud.mode==='cloud'?'클라우드의 이 공유 코드 데이터도 초기화됩니다.':'이 기기의 데이터가 초기화됩니다.'}</div>
+        <button class="btn ghost full" onclick="resetData()">우리 기록 비우기 (찜·후기·방문)</button>
+        <div class="hint">자동 추천 목록은 그대로 두고, 부부가 남긴 찜·후기·방문 기록만 비웁니다.</div>
       </div>
     </div>`;
   showOnly('s-settings');
