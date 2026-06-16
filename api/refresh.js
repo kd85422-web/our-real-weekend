@@ -31,16 +31,22 @@ function haversineMin(lat1,lng1,lat2,lng2){
 }
 
 async function fetchFestivals(key, home){
-  const out=[];
+  const out=[]; const diag=[];
   const start=new Date(); start.setDate(start.getDate()-3); // 진행 중인 것도 포함
   for(const area of AREA_CODES){
     const url=`https://apis.data.go.kr/B551011/KorService2/searchFestival2`
       +`?serviceKey=${encodeURIComponent(key)}&MobileOS=ETC&MobileApp=OurRealWeekend`
       +`&_type=json&numOfRows=30&pageNo=1&arrange=A&eventStartDate=${ymd(start)}&areaCode=${area}`;
+    const d={area, status:null, resultCode:null, resultMsg:null, total:null, note:null};
     try{
-      const r=await fetch(url); const j=await r.json();
+      const r=await fetch(url); d.status=r.status;
+      const text=await r.text();
+      let j; try{ j=JSON.parse(text); }
+      catch(e){ d.note='JSON 아님(에러 응답일 수 있음): '+text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,180); diag.push(d); continue; }
+      d.resultCode=j?.response?.header?.resultCode; d.resultMsg=j?.response?.header?.resultMsg;
+      d.total=j?.response?.body?.totalCount;
       let items=j?.response?.body?.items?.item || [];
-      if(!Array.isArray(items)) items=[items];
+      if(!Array.isArray(items)) items=items?[items]:[];
       for(const it of items){
         if(!it || !it.title) continue;
         const lat=parseFloat(it.mapy), lng=parseFloat(it.mapx);
@@ -57,12 +63,12 @@ async function fetchFestivals(key, home){
           best:false, wished:false, visited:false, rating:0
         });
       }
-    }catch(e){ /* 한 지역 실패해도 계속 */ }
+    }catch(e){ d.note='요청 실패: '+String(e&&e.message||e); }
+    diag.push(d);
   }
-  // 시작일 빠른 순 정렬, 사진 있는 것 우선
   out.sort((a,b)=>(a.eventStart||'').localeCompare(b.eventStart||''));
   const withPhoto=out.filter(p=>p.photo), noPhoto=out.filter(p=>!p.photo);
-  return [...withPhoto, ...noPhoto].slice(0,12);
+  return { places:[...withPhoto, ...noPhoto].slice(0,12), diag };
 }
 
 async function fetchYoutube(key){
@@ -105,10 +111,12 @@ module.exports = async (req, res) => {
   if(!TOUR) return res.status(500).json({ok:false, error:'TOUR_API_KEY 환경변수가 필요합니다.'});
 
   try{
-    const fests=await fetchFestivals(TOUR, home);
+    const fr=await fetchFestivals(TOUR, home);
+    const fests=fr.places;
     const tubes=await fetchYoutube(YT);
     const places=[...fests, ...tubes];
-    if(places.length===0) return res.status(200).json({ok:true, count:0, note:'가져온 항목이 없습니다. 키/날짜를 확인하세요.'});
+    if(places.length===0) return res.status(200).json({ok:true, count:0,
+      note:'가져온 항목이 없습니다. 아래 diag 의 resultMsg/note 를 확인하세요.', diag:fr.diag});
 
     // 가장 가깝거나 가장 임박한 행사를 이번 주 BEST 로
     const best = fests.find(p=>p.dist!=null) || fests[0] || places[0];
@@ -119,7 +127,7 @@ module.exports = async (req, res) => {
     await sbInsert(SB,KEY,rows);
 
     res.status(200).json({ok:true, count:rows.length, festivals:fests.length, youtube:tubes.length,
-      best:best&&best.name, updatedAt:new Date().toISOString()});
+      best:best&&best.name, updatedAt:new Date().toISOString(), diag:fr.diag});
   }catch(e){
     res.status(500).json({ok:false, error:String(e&&e.message||e)});
   }
