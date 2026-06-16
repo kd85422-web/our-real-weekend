@@ -31,42 +31,49 @@ function haversineMin(lat1,lng1,lat2,lng2){
 }
 
 async function fetchFestivals(key, home){
-  const out=[]; const diag=[];
-  const start=new Date(); start.setDate(start.getDate()-3); // 진행 중인 것도 포함
+  const byId={}; const diag=[];
+  const now=new Date(); const y=now.getFullYear();
+  // 오늘 → 올해 초 → 작년 초 순으로 폴백 (데이터가 있는 가장 최신 시점을 사용)
+  const candidates=[ymd(now), `${y}0101`, `${y-1}0101`];
   for(const area of AREA_CODES){
-    const url=`https://apis.data.go.kr/B551011/KorService2/searchFestival2`
-      +`?serviceKey=${encodeURIComponent(key)}&MobileOS=ETC&MobileApp=OurRealWeekend`
-      +`&_type=json&numOfRows=30&pageNo=1&arrange=A&eventStartDate=${ymd(start)}&areaCode=${area}`;
-    const d={area, status:null, resultCode:null, resultMsg:null, total:null, note:null};
-    try{
-      const r=await fetch(url); d.status=r.status;
-      const text=await r.text();
-      let j; try{ j=JSON.parse(text); }
-      catch(e){ d.note='JSON 아님(에러 응답일 수 있음): '+text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,180); diag.push(d); continue; }
-      d.resultCode=j?.response?.header?.resultCode; d.resultMsg=j?.response?.header?.resultMsg;
-      d.total=j?.response?.body?.totalCount;
-      let items=j?.response?.body?.items?.item || [];
-      if(!Array.isArray(items)) items=items?[items]:[];
-      for(const it of items){
-        if(!it || !it.title) continue;
-        const lat=parseFloat(it.mapy), lng=parseFloat(it.mapx);
-        out.push({
-          id:'tour'+it.contentid,
-          name:decodeEntities(it.title),
-          emoji:'🎏', type:'축제·행사', source:'관광공사',
-          region:AREA[String(it.areacode)]||AREA[area]||'',
-          loc:(it.addr1||'').split(' ').slice(0,2).join(' ')||AREA[area]||'',
-          dist:haversineMin(home.lat,home.lng,lat,lng),
-          cost:'', indoor:false,
-          photo:it.firstimage||it.firstimage2||'', seed:'fest'+it.contentid,
-          eventStart:it.eventstartdate, eventEnd:it.eventenddate,
-          best:false, wished:false, visited:false, rating:0
-        });
-      }
-    }catch(e){ d.note='요청 실패: '+String(e&&e.message||e); }
-    diag.push(d);
+    const d={area, usedDate:null, tried:[], count:0, note:null};
+    let items=[];
+    for(const dt of candidates){
+      const url=`https://apis.data.go.kr/B551011/KorService2/searchFestival2`
+        +`?serviceKey=${encodeURIComponent(key)}&MobileOS=ETC&MobileApp=OurRealWeekend`
+        +`&_type=json&numOfRows=50&pageNo=1&arrange=A&eventStartDate=${dt}&areaCode=${area}`;
+      try{
+        const r=await fetch(url); const text=await r.text();
+        let j; try{ j=JSON.parse(text); }
+        catch(e){ d.tried.push({dt, parseErr:text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,120)}); continue; }
+        const total=j?.response?.body?.totalCount||0;
+        d.tried.push({dt, total});
+        let it=j?.response?.body?.items?.item || [];
+        if(!Array.isArray(it)) it=it?[it]:[];
+        if(it.length){ d.usedDate=dt; items=it; break; }
+      }catch(e){ d.tried.push({dt, err:String(e&&e.message||e)}); }
+    }
+    for(const it of items){
+      if(!it || !it.title) continue;
+      const lat=parseFloat(it.mapy), lng=parseFloat(it.mapx);
+      byId['tour'+it.contentid]={
+        id:'tour'+it.contentid,
+        name:decodeEntities(it.title),
+        emoji:'🎏', type:'축제·행사', source:'관광공사',
+        region:AREA[String(it.areacode)]||AREA[area]||'',
+        loc:(it.addr1||'').split(' ').slice(0,2).join(' ')||AREA[area]||'',
+        dist:haversineMin(home.lat,home.lng,lat,lng),
+        cost:'', indoor:false,
+        photo:it.firstimage||it.firstimage2||'', seed:'fest'+it.contentid,
+        eventStart:it.eventstartdate, eventEnd:it.eventenddate,
+        best:false, wished:false, visited:false, rating:0
+      };
+    }
+    d.count=items.length; diag.push(d);
   }
-  out.sort((a,b)=>(a.eventStart||'').localeCompare(b.eventStart||''));
+  const out=Object.values(byId);
+  // 시작일 최신순(가장 최근/임박 행사 우선), 사진 있는 것 먼저
+  out.sort((a,b)=>(b.eventStart||'').localeCompare(a.eventStart||''));
   const withPhoto=out.filter(p=>p.photo), noPhoto=out.filter(p=>!p.photo);
   return { places:[...withPhoto, ...noPhoto].slice(0,12), diag };
 }
