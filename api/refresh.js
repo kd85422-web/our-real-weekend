@@ -14,22 +14,21 @@
  * ============================================================ */
 
 // 취향별 검색어 묶음 (주마다 일부를 돌려가며 다양하게)
-// 판교·분당 기준 가까운 동네 위주 + 가끔 서울 핫플
+// 판교에서 1시간 이내(지하철·자가용) 나들이 — 서울 핫플 + 수도권 명소 위주
 const QUERY_SETS = {
-  food:   ['정자동 카페거리 맛집','판교 맛집','서현 맛집','분당 맛집','광교 카페','수원 행궁동 맛집','용인 보정동 카페거리','성수 맛집','연남동 맛집'],
-  play:   ['분당 원데이클래스','판교 이색데이트','수원 공방 체험','용인 도자기 클래스','분당 향수공방','서울 원데이클래스'],
-  popup:  ['판교 현대백화점 팝업','분당 전시','수원 전시회','경기도미술관 전시','백남준아트센터','성수 팝업스토어'],
-  walk:   ['분당 율동공원','판교 화랑공원','광교호수공원','분당중앙공원 산책','수원화성 산책','과천 서울대공원'],
+  food:   ['성수 맛집','연남동 맛집','익선동 맛집','한남동 맛집','망원동 카페','용산 맛집','잠실 맛집','광교 카페','수원 행궁동 맛집','용인 보정동 카페거리'],
+  play:   ['서울 원데이클래스','성수 이색체험','홍대 방탈출','한강 카약 체험','도자기 클래스 서울','용인 에버랜드','과천 서울랜드'],
+  popup:  ['성수 팝업스토어','더현대서울 팝업','잠실 롯데월드몰 팝업','서울 전시회','디뮤지엄 전시','국립현대미술관 서울'],
+  walk:   ['서울숲 나들이','석촌호수 산책','북촌한옥마을','남산 나들이','양평 두물머리','가평 아침고요수목원','광교호수공원'],
 };
 
 function weekIndex(){ return Math.floor(Date.now()/(7*864e5)); }
-// 매주 각 카테고리에서 2개씩 회전 선택 → 신선하게
+// 매주 각 카테고리에서 3개씩 회전 선택 → 다양하고 신선하게
 function activeQueries(){
   const w=weekIndex(), out=[];
   for(const k of Object.keys(QUERY_SETS)){
     const arr=QUERY_SETS[k];
-    out.push({cat:k, q:arr[w%arr.length]});
-    out.push({cat:k, q:arr[(w+1)%arr.length]});
+    for(let i=0;i<3;i++) out.push({cat:k, q:arr[(w+i)%arr.length]});
   }
   return out;
 }
@@ -77,31 +76,34 @@ async function fetchNaverPlaces(id, secret, home){
     const d={q, status:res.status, count:0, note:null};
     if(res.status!==200){ d.note=(res.json&&res.json.errorMessage)||res.raw.slice(0,120); diag.push(d); continue; }
     const items=res.json?.items||[];
-    for(const it of items){
-      const name=stripTags(it.title); if(!name) continue;
+    items.forEach((it,idx)=>{
+      const name=stripTags(it.title); if(!name) return;
       const {lon,lat}=toLonLat(it.mapx, it.mapy);
       const meta=classify(it.category);
       const addr=it.roadAddress||it.address||'';
       const id2=hashId(it.link||name+addr);
+      const dist=haversineMin(home.lat,home.lng,lat,lon);
+      const prev=byId[id2];
       byId[id2]={
         id:id2, name,
         emoji:meta.emoji, type:meta.type, source:'네이버',
         category:catLabel(cat),
         region:(addr.split(' ')[0]||'').replace('특별시','').replace('광역시','').replace('도',''),
         loc:addr.split(' ').slice(0,3).join(' '),
-        dist:haversineMin(home.lat,home.lng,lat,lon),
-        cost:'', indoor:meta.indoor,
+        dist, cost:'', indoor:meta.indoor,
         photo:'', seed:id2,
-        link:it.link||'', _lat:lat, _lon:lon,
+        link:it.link||'',
+        _rank: prev? Math.min(prev._rank, idx) : idx,   // 리뷰 많은 순 위치 = 핫함
         best:false, wished:false, visited:false, rating:0
       };
-    }
+    });
     d.count=items.length; diag.push(d);
   }
-  let out=Object.values(byId);
-  // 집에서 가까운 순 (좌표 없는 건 뒤로)
-  out.sort((a,b)=>((a.dist==null)-(b.dist==null)) || ((a.dist||9999)-(b.dist||9999)));
+  // 1시간 이내(대략)만 남기고, '핫한 순(리뷰 많은 순)'으로 — 거리는 보조
+  let out=Object.values(byId).filter(p=>p.dist==null || p.dist<=80);
+  out.sort((a,b)=> (a._rank-b._rank) || ((a.dist||999)-(b.dist||999)));
   out=out.slice(0,12);
+  out.forEach(p=>delete p._rank);
   // 대표 사진 붙이기 (네이버 이미지검색)
   for(const p of out){
     try{
