@@ -84,21 +84,36 @@ let DB;
 function saveLocal(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
 
 async function loadData(){
+  // 개인 공유 공간(space) 여부와 무관하게, Supabase가 연결되어 있으면 추천 항상 가져옴
+  let recos=[];
+  if(Cloud.sb){
+    try{ recos=await cloudFetchRecos(); }catch(e){}
+  }
+
   if(Cloud.mode==='cloud'){
     try{
       const d=await cloudFetch();
-      let recos=[]; try{ recos=await cloudFetchRecos(); }catch(e){}
-      if(d.places.length===0 && d.reviews.length===0 && recos.length===0){
+      const map={}; recos.forEach(p=>map[p.id]=p); d.places.forEach(p=>map[p.id]=p);
+      if(Object.keys(map).length===0 && d.reviews.length===0){
         DB=seed(); await cloudPushAll();
       } else {
-        const map={}; recos.forEach(p=>map[p.id]=p); d.places.forEach(p=>map[p.id]=p);
         DB={profile:'나', places:Object.values(map), reviews:d.reviews};
       }
       saveLocal(); return;
     }catch(e){ toast('클라우드 연결 실패 — 로컬로 동작'); Cloud.mode='local'; }
   }
-  try{ DB=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
-  if(!DB||!DB.places) { DB=seed(); saveLocal(); }
+
+  // 로컬 모드: 캐시된 개인 기록에 추천을 합쳐서 보여줌
+  let local=null;
+  try{ local=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+  if(!local||!local.places) local=seed();
+  if(recos.length){
+    const map={}; recos.forEach(p=>map[p.id]=p); local.places.forEach(p=>map[p.id]=p);
+    DB={profile:local.profile||'나', places:Object.values(map), reviews:local.reviews||[]};
+  } else {
+    DB=local;
+  }
+  saveLocal();
 }
 
 async function resetData(){
