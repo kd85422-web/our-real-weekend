@@ -438,6 +438,11 @@ async function toggleHeart(e,id){ e.stopPropagation(); const p=place(id); p.wish
 /* ---------------- 시작 ---------------- */
 (async function start(){
   buildClient();
+  // 캐시된 로컬 데이터로 즉시 렌더링 → 목록이 바로 보임
+  try{ DB=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+  if(!DB||!DB.places) DB=seed();
+  renderAll();
+  // 클라우드 동기화 후 최신 데이터로 재렌더링
   await loadData();
   renderAll();
   if(Cloud.mode==='cloud') subscribeRealtime();
