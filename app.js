@@ -10,6 +10,22 @@ const RECO_SPACE='__recos__';   // 자동 추천이 채워지는 공유 공간
 const COST_LABEL={free:'무료',cheap:'저렴',mid:'보통',high:'넉넉'};
 const REGIONS=['서울','경기','인천','강원','충남','충북','전북','전남','경북','경남','제주'];
 
+const CATEGORIES=[
+  {key:'all',     emoji:'🗺️', label:'전체'},
+  {key:'cycling', emoji:'🚴', label:'자전거',
+    match:p=>/(자전거|라이딩|사이클|바이크|자출)/.test((p.category||'')+p.type+p.name)},
+  {key:'food',    emoji:'🍽️', label:'맛집',
+    match:p=>/(맛집|식당|레스토랑|음식|밥|고기|해산물|포차|술집|이자카야)/.test((p.category||'')+p.type+p.name)},
+  {key:'seasonal',emoji:'🌸', label:'계절맞이',
+    match:p=>/(꽃|단풍|벚꽃|봄꽃|겨울|눈|계절|축제|빛|불꽃)/.test((p.category||'')+p.type+p.name)},
+  {key:'cafe',    emoji:'☕', label:'카페·브런치',
+    match:p=>/(카페|브런치|커피|베이커리|디저트|cafe|빵)/.test((p.category||'')+p.type+p.name)},
+  {key:'culture', emoji:'🎨', label:'문화·전시',
+    match:p=>/(전시|팝업|공연|갤러리|미술|박물관|문화|뮤지컬|연극|팝업스토어)/.test((p.category||'')+p.type+p.name)},
+  {key:'picnic',  emoji:'🌿', label:'피크닉·공원',
+    match:p=>/(공원|피크닉|나들이|산책|정원|한강|숲|수목원|뚝섬)/.test((p.category||'')+p.type+p.name)},
+];
+
 /* ---------------- 클라우드 레이어 ---------------- */
 const Cloud={ sb:null, space:null, mode:'local' };
 function buildClient(){
@@ -213,10 +229,44 @@ function renderHome(){
     bigpick.style.display='none';
   }
 
-  const others=DB.places.filter(p=>!p.visited && p.id!==(best&&best.id) && !p.wished);
+  // 카테고리 탭 그리기
+  const tabsEl=$('cat-tabs');
+  tabsEl.innerHTML='';
+  CATEGORIES.forEach(cat=>{
+    const btn=document.createElement('button');
+    btn.className='cat-tab'+(currentCat===cat.key?' on':'');
+    btn.dataset.cat=cat.key;
+    btn.textContent=`${cat.emoji} ${cat.label}`;
+    btn.onclick=()=>selectCategory(cat.key);
+    tabsEl.appendChild(btn);
+  });
+
+  updateHomeGrid(best);
+}
+
+let currentCat='all';
+
+function selectCategory(key){
+  currentCat=key;
+  document.querySelectorAll('.cat-tab').forEach(b=>b.classList.toggle('on', b.dataset.cat===key));
+  const best=DB.places.find(p=>p.best)||DB.places.find(p=>!p.visited)||DB.places[0];
+  updateHomeGrid(best);
+}
+
+function updateHomeGrid(best){
+  const cat=CATEGORIES.find(c=>c.key===currentCat);
+  let pool=DB.places.filter(p=>!p.visited && p.id!==(best&&best.id));
+  if(cat && cat.match) pool=pool.filter(p=>cat.match(p));
+
   const grid=$('home-grid');
+  const empty=$('home-empty');
   grid.innerHTML='';
-  others.forEach(p=>grid.appendChild(makeCard(p)));
+  if(pool.length){
+    pool.slice(0,15).forEach(p=>grid.appendChild(makeCard(p)));
+    grid.style.display=''; empty.style.display='none';
+  } else {
+    grid.style.display='none'; empty.style.display='';
+  }
 }
 
 function renderWish(){

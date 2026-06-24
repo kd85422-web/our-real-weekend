@@ -53,6 +53,13 @@ body{font-family:'Pretendard',-apple-system,system-ui,sans-serif; background:#ec
 .bp-loc{font-size:14px; margin-top:9px; opacity:.95;}
 .bp-chev{position:absolute; right:16px; bottom:24px; color:#fff; font-size:30px; font-weight:300;}
 
+.cat-tabs{display:flex; gap:8px; padding:16px 22px 8px; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+.cat-tabs::-webkit-scrollbar{display:none;}
+.cat-tab{flex-shrink:0; height:34px; padding:0 14px; border-radius:var(--r-full);
+  border:1.5px solid var(--hairline); background:#fff; font-family:inherit;
+  font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; white-space:nowrap;}
+.cat-tab.on{background:var(--primary); border-color:var(--primary); color:#fff;}
+
 .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:8px 22px 0;}
 .card{cursor:pointer;}
 .card .ph{position:relative; border-radius:var(--r-md); overflow:hidden;}
