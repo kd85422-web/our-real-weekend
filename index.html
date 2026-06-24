@@ -12,15 +12,255 @@
 <div class="phone">
   <div class="notch"></div>
 
-  <div class="screen active" id="s-home"></div>
-  <div class="screen" id="s-wish"></div>
-  <div class="screen" id="s-map"></div>
-  <div class="screen" id="s-record"></div>
-  <div class="screen" id="s-detail"></div>
-  <div class="screen" id="s-form"></div>
-  <div class="screen" id="s-add"></div>
-  <div class="screen" id="s-settings"></div>
+  <!-- ===== 홈 ===== -->
+  <div class="screen active" id="s-home">
+    <div class="banner" id="home-banner" onclick="openSettings()"></div>
+    <div class="topbar">
+      <div>
+        <div class="wm">아워리얼위켄드</div>
+        <div class="sub">이번 주말, 어디 가볼까요?</div>
+      </div>
+      <div class="acts">
+        <button class="iconbtn" onclick="openAdd()" title="장소 추가">＋</button>
+        <button class="iconbtn" onclick="openSettings()" title="설정">⚙️</button>
+      </div>
+    </div>
+    <div class="bigpick" id="home-bigpick" style="display:none;">
+      <img id="home-bp-img">
+      <div class="bp-grad"></div>
+      <div class="bp-badge">이번 주 BEST</div>
+      <button class="heart" id="home-bp-heart">♥</button>
+      <div class="bp-meta">
+        <h2 id="home-bp-name"></h2>
+        <div class="bp-loc" id="home-bp-loc"></div>
+      </div>
+      <div class="bp-chev">›</div>
+    </div>
+    <div class="sec" style="padding-top:24px;">
+      <h2>다른 추천</h2>
+      <div class="h-sub">이번 주 화제인 행사·체험·나들이</div>
+    </div>
+    <div class="grid" id="home-grid"></div>
+    <div style="height:24px;"></div>
+  </div>
 
+  <!-- ===== 찜 ===== -->
+  <div class="screen" id="s-wish">
+    <div class="topbar dark">
+      <div>
+        <div class="wm">찜한 곳</div>
+        <div class="sub">다음에 가보고 싶은 곳 <span id="wish-count">0</span></div>
+      </div>
+    </div>
+    <div class="grid" id="wish-grid" style="padding-top:18px; display:none;"></div>
+    <div class="empty" id="wish-empty">아직 찜한 곳이 없어요.<br>마음에 드는 곳의 ♥를 눌러보세요.</div>
+    <div style="height:24px;"></div>
+  </div>
+
+  <!-- ===== 지도 ===== -->
+  <div class="screen" id="s-map">
+    <div class="topbar dark">
+      <div>
+        <div class="wm">우리의 발자취</div>
+        <div class="sub">전국 11개 지역 중 <span id="map-visited">0</span>곳 방문</div>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div class="legend">
+        <span><i style="background:#ffd1da;"></i>1~2회</span>
+        <span><i style="background:#ff8da3;"></i>3~5회</span>
+        <span><i style="background:#ff385c;"></i>6회+</span>
+      </div>
+      <svg class="korea" viewBox="0 0 210 320" xmlns="http://www.w3.org/2000/svg">
+        <path class="base" d="M52,70 L96,46 L150,44 L172,60 L175,115 L170,165 L156,190 L142,212 L110,216 L88,250 L64,218 L48,190 L33,150 L38,108 Z"/>
+        <polygon id="reg-경기" class="reg" points="52,70 96,46 116,86 100,104 64,104 47,86"/>
+        <polygon id="reg-강원" class="reg" points="96,46 150,44 172,60 175,115 150,120 118,104 116,86"/>
+        <polygon id="reg-충남" class="reg" points="38,108 64,104 92,116 88,140 58,152 35,148"/>
+        <ellipse id="reg-제주" class="reg" cx="80" cy="288" rx="22" ry="11"/>
+        <circle cx="74" cy="78" r="3" fill="#fff"/>
+        <text x="74" y="92" font-size="9" fill="#fff" text-anchor="middle" font-weight="700">경기</text>
+        <text x="140" y="86" font-size="9" fill="#666" text-anchor="middle" font-weight="700">강원</text>
+        <text x="80" y="291" font-size="8" fill="#a8a8a8" text-anchor="middle" font-weight="700">제주</text>
+      </svg>
+      <div id="map-bars"></div>
+      <div class="empty" id="map-empty" style="display:none;">아직 색칠된 지역이 없어요.</div>
+    </div>
+  </div>
+
+  <!-- ===== 기록 ===== -->
+  <div class="screen" id="s-record">
+    <div class="topbar dark">
+      <div>
+        <div class="wm">우리의 기록</div>
+        <div class="sub">함께 다녀온 곳 <span id="record-count">0</span> · 누적 지출 <span id="record-cost">0</span>만원</div>
+      </div>
+    </div>
+    <div id="record-list"></div>
+    <div class="empty" id="record-empty">아직 다녀온 곳이 없어요.<br>다녀온 곳에 후기를 남겨보세요.</div>
+  </div>
+
+  <!-- ===== 상세 ===== -->
+  <div class="screen" id="s-detail">
+    <div class="detail-photo">
+      <img id="detail-img">
+      <button class="back" onclick="goBack()">←</button>
+      <button class="heart" id="detail-heart" style="top:44px;right:16px;width:36px;height:36px;font-size:18px;">♥</button>
+    </div>
+    <div class="detail-body">
+      <h1 id="detail-name"></h1>
+      <div class="loc" id="detail-loc"></div>
+      <div class="loc" id="detail-eventdate" style="display:none;"></div>
+      <div class="pills" id="detail-pills"></div>
+      <a class="btn ghost full" id="detail-link" target="_blank" rel="noopener"
+         style="display:none;align-items:center;justify-content:center;gap:6px;text-decoration:none;margin-top:2px;"></a>
+      <div class="divider"></div>
+      <div class="stat-row">
+        <div class="stat"><div class="big" id="detail-rating">-</div><div class="lbl">우리 평점</div></div>
+        <div class="stat"><div class="big" id="detail-visits">0번</div><div class="lbl">다녀온 횟수</div></div>
+        <div class="stat"><div class="big" id="detail-cost">-</div><div class="lbl">지출</div></div>
+      </div>
+      <div class="divider"></div>
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;">우리의 후기</h2>
+      <div id="detail-reviews"></div>
+      <p id="detail-no-reviews" style="color:var(--muted);font-size:14px;display:none;">아직 후기가 없어요. 다녀왔다면 첫 후기를 남겨보세요!</p>
+    </div>
+    <div class="cta">
+      <div class="p"><b id="detail-cta-title"></b><br>
+        <span style="color:var(--muted);font-size:13px;">후기를 남겨보세요</span></div>
+      <button class="btn" id="detail-cta-btn">후기 쓰기</button>
+    </div>
+  </div>
+
+  <!-- ===== 후기 작성 ===== -->
+  <div class="screen" id="s-form">
+    <div class="topbar dark" style="padding-top:44px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="form-back" style="cursor:pointer;font-size:20px;">←</span>
+        <div class="wm" style="font-size:18px;">후기 작성</div>
+      </div>
+    </div>
+    <div class="form-body">
+      <div id="form-place-label" style="font-size:15px;font-weight:600;margin-bottom:16px;"></div>
+      <div class="field" style="margin-bottom:8px;"><label>누구의 후기인가요?</label></div>
+      <div class="who" id="whoPick">
+        <button onclick="setAuthor('나')">🙋‍♀️ 나</button>
+        <button onclick="setAuthor('남편')">🙋‍♂️ 남편</button>
+      </div>
+      <div class="field">
+        <label>별점</label>
+        <div class="stars-pick" id="starPick">
+          <span onclick="setRating(1)">★</span>
+          <span onclick="setRating(2)">★</span>
+          <span onclick="setRating(3)">★</span>
+          <span onclick="setRating(4)">★</span>
+          <span onclick="setRating(5)">★</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>한 줄 후기</label>
+        <textarea id="fText" placeholder="오늘 어땠나요? 솔직하게 남겨보세요"></textarea>
+      </div>
+      <div class="field">
+        <label>사진 (선택)</label>
+        <div class="photo-add" id="photoBox">
+          <div class="slot" onclick="addPhoto()">＋</div>
+        </div>
+        <div class="hint">데모에서는 임의 사진이 들어가요. 실제 업로드는 다음 단계에서 연결합니다.</div>
+      </div>
+      <div class="field"><label>방문일</label><input type="date" id="fDate"></div>
+      <div class="field"><label>지출 (원, 선택)</label><input type="number" id="fCost" placeholder="예: 30000" inputmode="numeric"></div>
+      <div class="field toggle">
+        <label style="margin:0;">또 가고 싶어요</label>
+        <div class="switch on" id="revSwitch" onclick="toggleRev()"><i></i></div>
+      </div>
+    </div>
+    <div class="cta"><button class="btn full" onclick="saveReview()">후기 저장하기</button></div>
+  </div>
+
+  <!-- ===== 장소 추가 ===== -->
+  <div class="screen" id="s-add">
+    <div class="topbar dark" style="padding-top:44px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="add-back" style="cursor:pointer;font-size:20px;">←</span>
+        <div class="wm" style="font-size:18px;">장소 추가</div>
+      </div>
+    </div>
+    <div class="form-body">
+      <div class="field"><label>장소·행사 이름</label><input id="aName" placeholder="예: 남산 케이블카"></div>
+      <div class="field">
+        <label>지역</label>
+        <select id="aRegion">
+          <option>서울</option><option>경기</option><option>인천</option><option>강원</option>
+          <option>충남</option><option>충북</option><option>전북</option><option>전남</option>
+          <option>경북</option><option>경남</option><option>제주</option>
+        </select>
+      </div>
+      <div class="field"><label>유형</label><input id="aType" placeholder="예: 나들이 / 팝업 / 체험"></div>
+      <div class="field"><label>집에서 거리 (분)</label><input id="aDist" type="number" placeholder="예: 40" inputmode="numeric"></div>
+      <div class="field">
+        <label>예상 비용</label>
+        <select id="aCost">
+          <option value="free">무료</option>
+          <option value="cheap">저렴</option>
+          <option value="mid" selected>보통</option>
+          <option value="high">넉넉</option>
+        </select>
+      </div>
+      <div class="field toggle">
+        <label style="margin:0;">실내인가요?</label>
+        <div class="switch" id="aIndoor" onclick="this.classList.toggle('on')"><i></i></div>
+      </div>
+    </div>
+    <div class="cta"><button class="btn full" onclick="savePlace()">추가하기</button></div>
+  </div>
+
+  <!-- ===== 설정 ===== -->
+  <div class="screen" id="s-settings">
+    <div class="topbar dark" style="padding-top:44px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span id="settings-back" style="cursor:pointer;font-size:20px;">←</span>
+        <div class="wm" style="font-size:18px;">설정 · 부부 공유</div>
+      </div>
+    </div>
+    <div class="form-body">
+      <div class="field">
+        <label>현재 상태</label>
+        <div class="pill" id="settings-status-pill" style="display:inline-block;"></div>
+      </div>
+
+      <!-- 클라우드 키 있을 때 -->
+      <div id="settings-cloud-section" style="display:none;">
+        <div class="field">
+          <label>공유 코드</label>
+          <input id="spaceInput" placeholder="예: minji-junho">
+          <div class="hint">부부가 <b>같은 코드</b>를 입력하면 같은 기록을 공유해요. 남편에게 이 코드를 알려주세요.</div>
+        </div>
+        <div class="cta" style="position:static;border:0;padding:0 0 18px;">
+          <button class="btn full" id="settings-space-btn" onclick="applySpace()"></button>
+        </div>
+      </div>
+
+      <!-- 클라우드 키 없을 때 -->
+      <div id="settings-no-cloud-section" style="display:none;">
+        <div class="field">
+          <div class="hint" style="font-size:13px;line-height:1.6;">
+            아직 클라우드 키가 설정되지 않았어요. 부부 공유를 켜려면
+            <b>config.js</b> 에 Supabase URL/Key 를 입력하고 다시 배포하세요.
+            (자세한 방법은 프로젝트의 <b>README.md</b> 참고)
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="field">
+        <label>데이터</label>
+        <button class="btn ghost full" onclick="resetData()">우리 기록 비우기 (찜·후기·방문)</button>
+        <div class="hint">자동 추천 목록은 그대로 두고, 부부가 남긴 찜·후기·방문 기록만 비웁니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 네비게이션 ===== -->
   <div class="nav">
     <button class="on" data-screen="s-home" onclick="nav('s-home',this)"><span class="ic">🏠</span>홈</button>
     <button data-screen="s-wish" onclick="nav('s-wish',this)"><span class="ic">♡</span>찜</button>
@@ -29,6 +269,50 @@
   </div>
   <div class="toast" id="toast"></div>
 </div>
+
+<!-- ===== 반복 요소 템플릿 ===== -->
+<template id="tpl-card">
+  <div class="card">
+    <div class="ph">
+      <img loading="lazy">
+      <button class="heart">♥</button>
+      <div class="tag"></div>
+    </div>
+    <h3></h3>
+    <div class="line"></div>
+    <div class="price"></div>
+  </div>
+</template>
+
+<template id="tpl-record-row">
+  <div class="row">
+    <img>
+    <div class="info">
+      <h3></h3>
+      <div class="sub"></div>
+      <div class="reviewers"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-progress-card">
+  <div class="progress-card">
+    <div class="top"><b></b><span></span></div>
+    <div class="bar"><i></i></div>
+  </div>
+</template>
+
+<template id="tpl-review">
+  <div class="review">
+    <span class="av"></span>
+    <div class="rv-body">
+      <b><span class="rv-author-name"></span><span class="when"></span></b>
+      <div class="rv-stars"></div>
+      <p></p>
+      <div class="rv-photos"></div>
+    </div>
+  </div>
+</template>
 
 <!-- Supabase JS (클라우드 동기화 — config.js에 키가 있을 때만 사용) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>

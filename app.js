@@ -62,7 +62,6 @@ function onRemoteChange(){ clearTimeout(_rtTimer); _rtTimer=setTimeout(async()=>
 
 /* ---------------- 데이터 ---------------- */
 function seed(){
-  // 실제 추천은 __recos__ 공간(서버 자동 갱신)에서 오므로, 개인 공간은 비워 시작합니다.
   return { profile:'나', places:[], reviews:[] };
 }
 let DB;
@@ -74,9 +73,8 @@ async function loadData(){
       const d=await cloudFetch();
       let recos=[]; try{ recos=await cloudFetchRecos(); }catch(e){}
       if(d.places.length===0 && d.reviews.length===0 && recos.length===0){
-        DB=seed(); await cloudPushAll();           // 아직 아무것도 없을 때만 샘플
+        DB=seed(); await cloudPushAll();
       } else {
-        // 자동 추천(recos)을 바탕에 깔고, 부부 개인 기록(personal)으로 덮어쓰기
         const map={}; recos.forEach(p=>map[p.id]=p); d.places.forEach(p=>map[p.id]=p);
         DB={profile:'나', places:Object.values(map), reviews:d.reviews};
       }
@@ -96,14 +94,13 @@ async function resetData(){
     }catch(e){}
   }
   localStorage.removeItem(KEY);
-  await loadData();           // 추천(__recos__)은 유지된 채 다시 불러오기
+  await loadData();
   renderAll(); showOnly('s-home'); setNavActive('s-home'); toast('우리 기록을 비웠어요');
 }
 
 /* ---------------- 헬퍼 ---------------- */
-const img=(s,w=800,h=800)=>`https://picsum.photos/seed/${encodeURIComponent(s)}/${w}/${h}`;
-/* 장소 사진: 실제 사진 URL(photo)이 있으면 그걸, 없으면 임시 이미지 */
-const pimg=(p,w=800,h=800)=>(p&&p.photo&&/^https?:/.test(p.photo))?p.photo:img(p?p.seed:'x',w,h);
+const picsum=(s,w=800,h=800)=>`https://picsum.photos/seed/${encodeURIComponent(s)}/${w}/${h}`;
+const pimg=(p,w=800,h=800)=>(p&&p.photo&&/^https?:/.test(p.photo))?p.photo:picsum(p?p.seed:'x',w,h);
 const $=id=>document.getElementById(id);
 const place=id=>DB.places.find(p=>p.id===id);
 const reviewsOf=id=>DB.reviews.filter(r=>r.placeId===id).sort((a,b)=>a.author==='나'?-1:1);
@@ -113,61 +110,127 @@ const fmtRange=(a,b)=>{const s=fmtYmd(a),e=fmtYmd(b); return e&&e!==s?`${s} ~ ${
 const avgRating=id=>{const rs=reviewsOf(id); if(!rs.length) return place(id).rating||0; return (rs.reduce((s,r)=>s+r.rating,0)/rs.length);};
 const starStr=n=>'★'.repeat(Math.round(n))+'☆'.repeat(5-Math.round(n));
 function toast(msg){const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800);}
-function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
-/* ---------------- 공통 UI ---------------- */
-function bannerHTML(){
-  if(Cloud.mode==='cloud')
-    return `<div class="banner cloud" onclick="openSettings()">☁️ 부부 공유 중 · 코드 ${esc(Cloud.space)} · 설정 ▸</div>`;
-  return `<div class="banner" onclick="openSettings()">📱 이 기기에만 저장 중 · 부부 공유 설정하기 ▸</div>`;
+/* ---------------- 카드 / 행 생성 (template 클론) ---------------- */
+function makeCard(p){
+  const el=document.getElementById('tpl-card').content.cloneNode(true);
+  const card=el.querySelector('.card');
+  card.onclick=()=>openDetail(p.id);
+  card.querySelector('img').src=pimg(p,400,400);
+  const heart=card.querySelector('.heart');
+  heart.className='heart'+(p.wished?' on':'');
+  heart.onclick=e=>toggleHeart(e,p.id);
+  card.querySelector('.tag').textContent=`${p.emoji} ${p.type}`;
+  card.querySelector('h3').textContent=p.name;
+  card.querySelector('.line').textContent=`${p.source||''}${p.dist?` · 차로 ${p.dist}분`:''}`;
+  const price=card.querySelector('.price');
+  if(COST_LABEL[p.cost]){
+    const b=document.createElement('b'); b.textContent=COST_LABEL[p.cost]; price.appendChild(b);
+    price.appendChild(document.createTextNode(` · ⭐ ${avgRating(p.id).toFixed(1)}`));
+  } else {
+    price.textContent=`⭐ ${avgRating(p.id).toFixed(1)}`;
+  }
+  return card;
+}
+
+function makeRecordRow(p){
+  const el=document.getElementById('tpl-record-row').content.cloneNode(true);
+  const row=el.querySelector('.row');
+  const rs=reviewsOf(p.id);
+  const date=rs[0]?.date;
+  row.onclick=()=>openDetail(p.id);
+  row.querySelector('img').src=pimg(p,200,200);
+  row.querySelector('h3').textContent=p.name;
+  row.querySelector('.sub').textContent=`${date?fmtDate(date):''} · ${p.loc||''}`;
+  const reviewers=row.querySelector('.reviewers');
+  rs.forEach(r=>{
+    const av=document.createElement('span');
+    av.className='av '+(r.author==='나'?'me':'h');
+    av.textContent=r.author==='나'?'나':'남';
+    reviewers.appendChild(av);
+    reviewers.appendChild(document.createTextNode(`★${r.rating} `));
+  });
+  if(rs.some(r=>r.revisit)){
+    const span=document.createElement('span');
+    span.style.color='var(--primary)';
+    span.textContent='· ♥ 또 가고싶어요';
+    reviewers.appendChild(span);
+  }
+  return row;
+}
+
+function makeProgressCard(region, n){
+  const el=document.getElementById('tpl-progress-card').content.cloneNode(true);
+  const card=el.querySelector('.progress-card');
+  card.querySelector('b').textContent=region;
+  card.querySelector('span').textContent=`${n}곳 방문`;
+  card.querySelector('i').style.width=`${Math.min(100, n*22+10)}%`;
+  return card;
+}
+
+function makeReviewItem(r){
+  const el=document.getElementById('tpl-review').content.cloneNode(true);
+  const rev=el.querySelector('.review');
+  const av=rev.querySelector('.av');
+  av.className='av '+(r.author==='나'?'me':'h');
+  av.textContent=r.author==='나'?'나':'남';
+  rev.querySelector('.rv-author-name').textContent=r.author==='나'?'아내':'남편';
+  rev.querySelector('.when').textContent=` · ${fmtDate(r.date)}`;
+  rev.querySelector('.rv-stars').textContent=starStr(r.rating);
+  rev.querySelector('p').textContent=r.text;
+  const photos=rev.querySelector('.rv-photos');
+  if(r.photos&&r.photos.length){
+    r.photos.forEach(s=>{ const imgEl=document.createElement('img'); imgEl.src=picsum(s,200,200); photos.appendChild(imgEl); });
+  }
+  return rev;
 }
 
 /* ---------------- 렌더링 ---------------- */
 function renderAll(){ renderHome(); renderWish(); renderMap(); renderRecord(); }
 
-function cardHTML(p){
-  return `<div class="card" onclick="openDetail('${p.id}')">
-    <div class="ph"><img src="${pimg(p,400,400)}" loading="lazy">
-      <button class="heart ${p.wished?'on':''}" onclick="toggleHeart(event,'${p.id}')">♥</button>
-      <div class="tag">${p.emoji} ${esc(p.type)}</div></div>
-    <h3>${esc(p.name)}</h3>
-    <div class="line">${esc(p.source)}${p.dist?` · 차로 ${p.dist}분`:''}</div>
-    <div class="price">${COST_LABEL[p.cost]?`<b>${COST_LABEL[p.cost]}</b> · `:''}⭐ ${avgRating(p.id).toFixed(1)}</div>
-  </div>`;
-}
-
 function renderHome(){
-  const best=DB.places.find(p=>p.best) || DB.places.find(p=>!p.visited) || DB.places[0];
+  const banner=$('home-banner');
+  if(Cloud.mode==='cloud'){
+    banner.className='banner cloud';
+    banner.textContent=`☁️ 부부 공유 중 · 코드 ${Cloud.space} · 설정 ▸`;
+  } else {
+    banner.className='banner';
+    banner.textContent='📱 이 기기에만 저장 중 · 부부 공유 설정하기 ▸';
+  }
+
+  const best=DB.places.find(p=>p.best)||DB.places.find(p=>!p.visited)||DB.places[0];
+  const bigpick=$('home-bigpick');
+  if(best){
+    bigpick.style.display='';
+    bigpick.onclick=()=>openDetail(best.id);
+    $('home-bp-img').src=pimg(best,900,1100);
+    const bpHeart=$('home-bp-heart');
+    bpHeart.className='heart'+(best.wished?' on':'');
+    bpHeart.onclick=e=>toggleHeart(e,best.id);
+    $('home-bp-name').textContent=best.name;
+    $('home-bp-loc').textContent=[best.loc, best.dist?`차로 ${best.dist}분`:'', COST_LABEL[best.cost], (best.source||'')+' 추천'].filter(Boolean).join(' · ');
+  } else {
+    bigpick.style.display='none';
+  }
+
   const others=DB.places.filter(p=>!p.visited && p.id!==(best&&best.id) && !p.wished);
-  $('s-home').innerHTML=`
-    ${bannerHTML()}
-    <div class="topbar">
-      <div><div class="wm">아워리얼위켄드</div><div class="sub">이번 주말, 어디 가볼까요?</div></div>
-      <div class="acts">
-        <button class="iconbtn" onclick="openAdd()" title="장소 추가">＋</button>
-        <button class="iconbtn" onclick="openSettings()" title="설정">⚙️</button>
-      </div>
-    </div>
-    ${best?`<div class="bigpick" onclick="openDetail('${best.id}')">
-      <img src="${pimg(best,900,1100)}">
-      <div class="bp-grad"></div>
-      <div class="bp-badge">이번 주 BEST</div>
-      <button class="heart ${best.wished?'on':''}" onclick="toggleHeart(event,'${best.id}')">♥</button>
-      <div class="bp-meta"><h2>${esc(best.name)}</h2>
-        <div class="bp-loc">📍 ${[esc(best.loc), best.dist?`차로 ${best.dist}분`:'', COST_LABEL[best.cost], esc(best.source)+' 추천'].filter(Boolean).join(' · ')}</div></div>
-      <div class="bp-chev">›</div>
-    </div>`:''}
-    <div class="sec" style="padding-top:24px;"><h2>다른 추천</h2><div class="h-sub">이번 주 화제인 행사·체험·나들이</div></div>
-    <div class="grid">${others.map(cardHTML).join('')}</div>
-    <div style="height:24px;"></div>`;
+  const grid=$('home-grid');
+  grid.innerHTML='';
+  others.forEach(p=>grid.appendChild(makeCard(p)));
 }
 
 function renderWish(){
   const list=DB.places.filter(p=>p.wished);
-  $('s-wish').innerHTML=`
-    <div class="topbar dark"><div><div class="wm">찜한 곳</div><div class="sub">다음에 가보고 싶은 곳 ${list.length}</div></div></div>
-    ${list.length? `<div class="grid" style="padding-top:18px;">${list.map(cardHTML).join('')}</div><div style="height:24px;"></div>`
-      : `<div class="empty">아직 찜한 곳이 없어요.<br>마음에 드는 곳의 ♥를 눌러보세요.</div>`}`;
+  $('wish-count').textContent=list.length;
+  const grid=$('wish-grid');
+  const empty=$('wish-empty');
+  grid.innerHTML='';
+  if(list.length){
+    list.forEach(p=>grid.appendChild(makeCard(p)));
+    grid.style.display=''; empty.style.display='none';
+  } else {
+    grid.style.display='none'; empty.style.display='';
+  }
 }
 
 function renderRecord(){
@@ -175,97 +238,100 @@ function renderRecord(){
     const da=reviewsOf(a.id)[0]?.date||'', db=reviewsOf(b.id)[0]?.date||''; return db.localeCompare(da);});
   const uniqCost=[...new Set(DB.reviews.map(r=>r.placeId))].reduce((s,id)=>{
     const r=reviewsOf(id)[0]; return s+(r?.cost||0);},0);
-  $('s-record').innerHTML=`
-    <div class="topbar dark"><div><div class="wm">우리의 기록</div>
-      <div class="sub">함께 다녀온 곳 ${visited.length} · 누적 지출 ${(uniqCost/10000).toFixed(0)}만원</div></div></div>
-    ${visited.length? visited.map(p=>{
-      const rs=reviewsOf(p.id); const date=rs[0]?.date;
-      const rev=rs.map(r=>`<span class="av ${r.author==='나'?'me':'h'}">${r.author==='나'?'나':'남'}</span>★${r.rating}`).join(' ');
-      const again=rs.some(r=>r.revisit)?' · <span style="color:var(--primary);">♥ 또 가고싶어요</span>':'';
-      return `<div class="row" onclick="openDetail('${p.id}')">
-        <img src="${pimg(p,200,200)}">
-        <div class="info"><h3>${esc(p.name)}</h3>
-          <div class="sub">${date?fmtDate(date):''} · ${esc(p.loc)}</div>
-          <div class="reviewers">${rev}${again}</div></div></div>`;
-    }).join('') : `<div class="empty">아직 다녀온 곳이 없어요.<br>다녀온 곳에 후기를 남겨보세요.</div>`}`;
+
+  $('record-count').textContent=visited.length;
+  $('record-cost').textContent=(uniqCost/10000).toFixed(0);
+
+  const list=$('record-list');
+  const empty=$('record-empty');
+  list.innerHTML='';
+  if(visited.length){
+    visited.forEach(p=>list.appendChild(makeRecordRow(p)));
+    list.style.display=''; empty.style.display='none';
+  } else {
+    list.style.display='none'; empty.style.display='';
+  }
 }
 
 function renderMap(){
   const counts={};
   DB.places.filter(p=>p.visited).forEach(p=>{counts[p.region]=(counts[p.region]||0)+1;});
   const tier=n=> n>=6?'v3': n>=3?'v2': n>=1?'v1':'';
-  const polyClass=r=>'reg '+tier(counts[r]||0);
-  const visitedTotal=Object.keys(counts).length;
-  const bars=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([r,n])=>{
-    const pct=Math.min(100, n*22+10);
-    return `<div class="progress-card"><div class="top"><b>${r}</b><span>${n}곳 방문</span></div>
-      <div class="bar"><i style="width:${pct}%"></i></div></div>`;}).join('') ||
-    `<div class="empty">아직 색칠된 지역이 없어요.</div>`;
-  $('s-map').innerHTML=`
-    <div class="topbar dark"><div><div class="wm">우리의 발자취</div>
-      <div class="sub">전국 11개 지역 중 ${visitedTotal}곳 방문</div></div></div>
-    <div class="map-wrap">
-      <div class="legend"><span><i style="background:#ffd1da;"></i>1~2회</span><span><i style="background:#ff8da3;"></i>3~5회</span><span><i style="background:#ff385c;"></i>6회+</span></div>
-      <svg class="korea" viewBox="0 0 210 320" xmlns="http://www.w3.org/2000/svg">
-        <path class="base" d="M52,70 L96,46 L150,44 L172,60 L175,115 L170,165 L156,190 L142,212 L110,216 L88,250 L64,218 L48,190 L33,150 L38,108 Z"/>
-        <polygon class="${polyClass('경기')}" points="52,70 96,46 116,86 100,104 64,104 47,86"/>
-        <polygon class="${polyClass('강원')}" points="96,46 150,44 172,60 175,115 150,120 118,104 116,86"/>
-        <polygon class="${polyClass('충남')}" points="38,108 64,104 92,116 88,140 58,152 35,148"/>
-        <ellipse class="${polyClass('제주')}" cx="80" cy="288" rx="22" ry="11"/>
-        <circle cx="74" cy="78" r="3" fill="#fff"/>
-        <text x="74" y="92" font-size="9" fill="#fff" text-anchor="middle" font-weight="700">경기</text>
-        <text x="140" y="86" font-size="9" fill="#666" text-anchor="middle" font-weight="700">강원</text>
-        <text x="80" y="291" font-size="8" fill="#a8a8a8" text-anchor="middle" font-weight="700">제주</text>
-      </svg>
-      ${bars}
-    </div>`;
+
+  $('map-visited').textContent=Object.keys(counts).length;
+
+  ['경기','강원','충남','제주'].forEach(region=>{
+    const el=document.getElementById(`reg-${region}`);
+    if(el) el.className.baseVal='reg '+tier(counts[region]||0);
+  });
+
+  const bars=$('map-bars');
+  const empty=$('map-empty');
+  bars.innerHTML='';
+  const entries=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  if(entries.length){
+    entries.forEach(([region,n])=>bars.appendChild(makeProgressCard(region,n)));
+    bars.style.display=''; empty.style.display='none';
+  } else {
+    bars.style.display='none'; empty.style.display='';
+  }
 }
 
 /* ---------------- 상세 ---------------- */
 let currentId=null, backTo='s-home';
 function openDetail(id){
-  currentId=id; const p=place(id); if(!p) return; const rs=reviewsOf(id);
+  currentId=id; const p=place(id); if(!p) return;
+  const rs=reviewsOf(id);
   const visits=[...new Set(rs.map(r=>r.date))].length;
-  const cost=rs.length? reviewsOf(id)[0].cost : null;
-  const reviewsHTML = rs.length ? rs.map(r=>`
-    <div class="review"><span class="av ${r.author==='나'?'me':'h'}">${r.author==='나'?'나':'남'}</span>
-      <div class="rv-body"><b>${r.author==='나'?'아내':'남편'}<span class="when">· ${fmtDate(r.date)}</span></b>
-        <div class="rv-stars">${starStr(r.rating)}</div>
-        <p>${esc(r.text)}</p>
-        ${r.photos&&r.photos.length?`<div class="rv-photos">${r.photos.map(s=>`<img src="${img(s,200,200)}">`).join('')}</div>`:''}
-      </div></div>`).join('') : `<p style="color:var(--muted);font-size:14px;">아직 후기가 없어요. 다녀왔다면 첫 후기를 남겨보세요!</p>`;
-  $('s-detail').innerHTML=`
-    <div class="detail-photo"><img src="${pimg(p,900,700)}">
-      <button class="back" onclick="goBack()">←</button>
-      <button class="heart ${p.wished?'on':''}" style="top:44px;right:16px;width:36px;height:36px;font-size:18px;" onclick="toggleHeart(event,'${p.id}');openDetail('${p.id}')">♥</button>
-    </div>
-    <div class="detail-body">
-      <h1>${esc(p.name)}</h1>
-      <div class="loc">${[esc(p.loc), p.dist?`차로 ${p.dist}분`:'', esc(p.source)+' 추천'].filter(Boolean).join(' · ')}</div>
-      ${p.eventStart?`<div class="loc">📅 ${fmtRange(p.eventStart,p.eventEnd)}</div>`:''}
-      <div class="pills">
-        <span class="pill">${p.emoji} ${esc(p.type)}</span>
-        <span class="pill">${p.indoor?'🏠 실내':'🌤️ 야외'}</span>
-        ${COST_LABEL[p.cost]?`<span class="pill">💳 ${COST_LABEL[p.cost]}</span>`:''}
-      </div>
-      ${p.link?`<a class="btn ghost full" href="${esc(p.link)}" target="_blank" rel="noopener"
-        style="display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;margin-top:2px;">
-        ${p.source&&p.source.includes('유튜브')?'▶️ 유튜브에서 보기':'🔍 네이버에서 보기'} →</a>`:''}
-      <div class="divider"></div>
-      <div class="stat-row">
-        <div class="stat"><div class="big">${rs.length?avgRating(id).toFixed(1):'-'}</div><div class="lbl">우리 평점</div></div>
-        <div class="stat"><div class="big">${visits}번</div><div class="lbl">다녀온 횟수</div></div>
-        <div class="stat"><div class="big">${cost?(cost/10000).toFixed(1)+'만':'-'}</div><div class="lbl">지출</div></div>
-      </div>
-      <div class="divider"></div>
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:14px;">우리의 후기</h2>
-      ${reviewsHTML}
-    </div>
-    <div class="cta">
-      <div class="p"><b>${p.visited?'다시 다녀오셨나요?':'다녀오셨나요?'}</b><br>
-        <span style="color:var(--muted);font-size:13px;">후기를 남겨보세요</span></div>
-      <button class="btn" onclick="openForm('${p.id}')">후기 쓰기</button>
-    </div>`;
+  const cost=rs.length? rs[0].cost : null;
+
+  $('detail-img').src=pimg(p,900,700);
+
+  const heart=$('detail-heart');
+  heart.className='heart'+(p.wished?' on':'');
+  heart.onclick=e=>{ toggleHeart(e,p.id); openDetail(p.id); };
+
+  $('detail-name').textContent=p.name;
+  $('detail-loc').textContent=[p.loc, p.dist?`차로 ${p.dist}분`:'', (p.source||'')+' 추천'].filter(Boolean).join(' · ');
+
+  const eventdate=$('detail-eventdate');
+  if(p.eventStart){ eventdate.textContent=`📅 ${fmtRange(p.eventStart,p.eventEnd)}`; eventdate.style.display=''; }
+  else { eventdate.style.display='none'; }
+
+  const pills=$('detail-pills');
+  pills.innerHTML='';
+  [
+    `${p.emoji} ${p.type}`,
+    p.indoor?'🏠 실내':'🌤️ 야외',
+    COST_LABEL[p.cost]?`💳 ${COST_LABEL[p.cost]}`:null
+  ].filter(Boolean).forEach(text=>{
+    const span=document.createElement('span'); span.className='pill'; span.textContent=text; pills.appendChild(span);
+  });
+
+  const link=$('detail-link');
+  if(p.link){
+    link.href=p.link;
+    link.textContent=(p.source&&p.source.includes('유튜브'))?'▶️ 유튜브에서 보기 →':'🔍 네이버에서 보기 →';
+    link.style.display='flex';
+  } else { link.style.display='none'; }
+
+  $('detail-rating').textContent=rs.length?avgRating(id).toFixed(1):'-';
+  $('detail-visits').textContent=`${visits}번`;
+  $('detail-cost').textContent=cost?`${(cost/10000).toFixed(1)}만`:'-';
+
+  const reviewsContainer=$('detail-reviews');
+  const noReviews=$('detail-no-reviews');
+  reviewsContainer.innerHTML='';
+  if(rs.length){
+    rs.forEach(r=>reviewsContainer.appendChild(makeReviewItem(r)));
+    reviewsContainer.style.display=''; noReviews.style.display='none';
+  } else {
+    reviewsContainer.style.display='none'; noReviews.style.display='';
+  }
+
+  $('detail-cta-title').textContent=p.visited?'다시 다녀오셨나요?':'다녀오셨나요?';
+  $('detail-cta-btn').onclick=()=>openForm(p.id);
+
   showOnly('s-detail');
 }
 function goBack(){ showOnly(backTo); }
@@ -275,35 +341,25 @@ let formState={};
 function openForm(id){
   const p=place(id);
   formState={placeId:id, author:DB.profile||'나', rating:5, revisit:true, photos:[]};
-  $('s-form').innerHTML=`
-    <div class="topbar dark" style="padding-top:44px;"><div style="display:flex;align-items:center;gap:12px;">
-      <span style="cursor:pointer;font-size:20px;" onclick="openDetail('${id}')">←</span>
-      <div class="wm" style="font-size:18px;">후기 작성</div></div></div>
-    <div class="form-body">
-      <div style="font-size:15px;font-weight:600;margin-bottom:16px;">${p.emoji} ${esc(p.name)}</div>
-      <div class="field" style="margin-bottom:8px;"><label>누구의 후기인가요?</label></div>
-      <div class="who" id="whoPick">
-        <button class="${formState.author==='나'?'on':''}" onclick="setAuthor('나')">🙋‍♀️ 나</button>
-        <button class="${formState.author==='남편'?'on':''}" onclick="setAuthor('남편')">🙋‍♂️ 남편</button>
-      </div>
-      <div class="field"><label>별점</label><div class="stars-pick" id="starPick">${[1,2,3,4,5].map(i=>`<span class="${i<=formState.rating?'on':''}" onclick="setRating(${i})">★</span>`).join('')}</div></div>
-      <div class="field"><label>한 줄 후기</label><textarea id="fText" placeholder="오늘 어땠나요? 솔직하게 남겨보세요"></textarea></div>
-      <div class="field"><label>사진 (선택)</label>
-        <div class="photo-add" id="photoBox"><div class="slot" onclick="addPhoto()">＋</div></div>
-        <div class="hint">데모에서는 임의 사진이 들어가요. 실제 업로드는 다음 단계에서 연결합니다.</div></div>
-      <div class="field"><label>방문일</label><input type="date" id="fDate" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>지출 (원, 선택)</label><input type="number" id="fCost" placeholder="예: 30000" inputmode="numeric"></div>
-      <div class="field toggle"><label style="margin:0;">또 가고 싶어요</label>
-        <div class="switch ${formState.revisit?'on':''}" id="revSwitch" onclick="toggleRev()"><i></i></div></div>
-    </div>
-    <div class="cta"><button class="btn full" onclick="saveReview()">후기 저장하기</button></div>`;
+
+  $('form-back').onclick=()=>openDetail(id);
+  $('form-place-label').textContent=`${p.emoji} ${p.name}`;
+  setAuthor(formState.author);
+  setRating(formState.rating);
+  $('fText').value='';
+  $('fDate').value=new Date().toISOString().slice(0,10);
+  $('fCost').value='';
+  $('photoBox').innerHTML='<div class="slot" onclick="addPhoto()">＋</div>';
+  $('revSwitch').classList.add('on');
+
   showOnly('s-form');
 }
-function setAuthor(a){formState.author=a; document.querySelectorAll('#whoPick button').forEach((b,i)=>b.classList.toggle('on',(i===0)===(a==='나')));}
-function setRating(n){formState.rating=n; document.querySelectorAll('#starPick span').forEach((s,i)=>s.classList.toggle('on',i<n));}
-function toggleRev(){formState.revisit=!formState.revisit; $('revSwitch').classList.toggle('on',formState.revisit);}
-function addPhoto(){const s='ph'+Math.floor(Math.random()*99999); formState.photos.push(s);
-  const box=$('photoBox'); const el=document.createElement('div'); el.className='slot'; el.innerHTML=`<img src="${img(s,200,200)}">`; box.appendChild(el);}
+function setAuthor(a){ formState.author=a; document.querySelectorAll('#whoPick button').forEach((b,i)=>b.classList.toggle('on',(i===0)===(a==='나'))); }
+function setRating(n){ formState.rating=n; document.querySelectorAll('#starPick span').forEach((s,i)=>s.classList.toggle('on',i<n)); }
+function toggleRev(){ formState.revisit=!formState.revisit; $('revSwitch').classList.toggle('on',formState.revisit); }
+function addPhoto(){ const s='ph'+Math.floor(Math.random()*99999); formState.photos.push(s);
+  const box=$('photoBox'); const el=document.createElement('div'); el.className='slot';
+  const imgEl=document.createElement('img'); imgEl.src=picsum(s,200,200); el.appendChild(imgEl); box.appendChild(el); }
 async function saveReview(){
   const r={id:'r'+Date.now(), placeId:formState.placeId, author:formState.author,
     rating:formState.rating, text:$('fText').value.trim(), photos:formState.photos,
@@ -317,21 +373,9 @@ async function saveReview(){
 
 /* ---------------- 장소 추가 ---------------- */
 function openAdd(){
-  $('s-add').innerHTML=`
-    <div class="topbar dark" style="padding-top:44px;"><div style="display:flex;align-items:center;gap:12px;">
-      <span style="cursor:pointer;font-size:20px;" onclick="showOnly(backTo)">←</span>
-      <div class="wm" style="font-size:18px;">장소 추가</div></div></div>
-    <div class="form-body">
-      <div class="field"><label>장소·행사 이름</label><input id="aName" placeholder="예: 남산 케이블카"></div>
-      <div class="field"><label>지역</label><select id="aRegion">${REGIONS.map(r=>`<option>${r}</option>`).join('')}</select></div>
-      <div class="field"><label>유형</label><input id="aType" placeholder="예: 나들이 / 팝업 / 체험"></div>
-      <div class="field"><label>집에서 거리 (분)</label><input id="aDist" type="number" placeholder="예: 40" inputmode="numeric"></div>
-      <div class="field"><label>예상 비용</label><select id="aCost">
-        <option value="free">무료</option><option value="cheap">저렴</option><option value="mid" selected>보통</option><option value="high">넉넉</option></select></div>
-      <div class="field toggle"><label style="margin:0;">실내인가요?</label>
-        <div class="switch" id="aIndoor" onclick="this.classList.toggle('on')"><i></i></div></div>
-    </div>
-    <div class="cta"><button class="btn full" onclick="savePlace()">추가하기</button></div>`;
+  $('add-back').onclick=()=>showOnly(backTo);
+  $('aName').value=''; $('aType').value=''; $('aDist').value='';
+  $('aCost').value='mid'; $('aIndoor').classList.remove('on');
   showOnly('s-add');
 }
 async function savePlace(){
@@ -347,41 +391,24 @@ async function savePlace(){
 /* ---------------- 설정 (공유) ---------------- */
 function openSettings(){
   const cfg=configPresent();
-  $('s-settings').innerHTML=`
-    <div class="topbar dark" style="padding-top:44px;"><div style="display:flex;align-items:center;gap:12px;">
-      <span style="cursor:pointer;font-size:20px;" onclick="showOnly(backTo)">←</span>
-      <div class="wm" style="font-size:18px;">설정 · 부부 공유</div></div></div>
-    <div class="form-body">
-      <div class="field">
-        <label>현재 상태</label>
-        <div class="pill" style="display:inline-block;border-color:${Cloud.mode==='cloud'?'#1a6b3a':'var(--hairline)'};color:${Cloud.mode==='cloud'?'#1a6b3a':'var(--ink)'};">
-          ${Cloud.mode==='cloud'?'☁️ 클라우드 공유 켜짐':'📱 로컬 모드 (이 기기에만 저장)'}
-        </div>
-      </div>
-      ${cfg?`
-      <div class="field">
-        <label>공유 코드</label>
-        <input id="spaceInput" placeholder="예: minji-junho" value="${esc(Cloud.space)}">
-        <div class="hint">부부가 <b>같은 코드</b>를 입력하면 같은 기록을 공유해요. 남편에게 이 코드를 알려주세요.</div>
-      </div>
-      <div class="cta" style="position:static;border:0;padding:0 0 18px;">
-        <button class="btn full" onclick="applySpace()">${Cloud.space?'코드 변경 & 동기화':'공유 시작하기'}</button>
-      </div>`
-      :`
-      <div class="field">
-        <div class="hint" style="font-size:13px;line-height:1.6;">
-          아직 클라우드 키가 설정되지 않았어요. 부부 공유를 켜려면
-          <b>config.js</b> 에 Supabase URL/Key 를 입력하고 다시 배포하세요.
-          (자세한 방법은 프로젝트의 <b>README.md</b> 참고)
-        </div>
-      </div>`}
-      <div class="divider"></div>
-      <div class="field">
-        <label>데이터</label>
-        <button class="btn ghost full" onclick="resetData()">우리 기록 비우기 (찜·후기·방문)</button>
-        <div class="hint">자동 추천 목록은 그대로 두고, 부부가 남긴 찜·후기·방문 기록만 비웁니다.</div>
-      </div>
-    </div>`;
+  $('settings-back').onclick=()=>showOnly(backTo);
+
+  const pill=$('settings-status-pill');
+  if(Cloud.mode==='cloud'){
+    pill.style.borderColor='#1a6b3a'; pill.style.color='#1a6b3a';
+    pill.textContent='☁️ 클라우드 공유 켜짐';
+  } else {
+    pill.style.borderColor='var(--hairline)'; pill.style.color='var(--ink)';
+    pill.textContent='📱 로컬 모드 (이 기기에만 저장)';
+  }
+
+  $('settings-cloud-section').style.display=cfg?'':'none';
+  $('settings-no-cloud-section').style.display=cfg?'none':'';
+  if(cfg){
+    $('spaceInput').value=Cloud.space||'';
+    $('settings-space-btn').textContent=Cloud.space?'코드 변경 & 동기화':'공유 시작하기';
+  }
+
   showOnly('s-settings');
 }
 async function applySpace(){
